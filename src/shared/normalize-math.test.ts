@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeMath } from "./normalizeMath.ts";
+import { normalizeMath } from "./normalize-math.ts";
 
 describe("mixed delimiters", () => {
 	test("brackets and parens become dollars", () => {
@@ -22,6 +22,11 @@ describe("mixed delimiters", () => {
 		).toBe("$$\n\\begin{cases} 1 \\\\ 0 \\end{cases}\n$$");
 	});
 
+	test("a LaTeX line break \\\\[4pt] is not a bracket", () => {
+		const text = "$$\\begin{aligned} a \\\\[4pt] b \\end{aligned}$$";
+		expect(normalizeMath(text)).toBe(text);
+	});
+
 	test("code is left alone", () => {
 		const text = "Usá `\\(x\\)` o\n\n```tex\n\\[x\\]\n```\n";
 		expect(normalizeMath(text)).toBe(text);
@@ -39,6 +44,10 @@ describe("currency", () => {
 		expect(normalizeMath("Entre $1,299 y $19.99")).toBe(
 			"Entre \\$1,299 y \\$19.99",
 		);
+	});
+
+	test("a range of amounts", () => {
+		expect(normalizeMath("Entre $5-$10")).toBe("Entre \\$5-\\$10");
 	});
 
 	test("math that starts with a digit stays math", () => {

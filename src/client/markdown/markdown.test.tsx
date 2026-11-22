@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Markdown } from "./Markdown.tsx";
+import { Markdown } from "./markdown.tsx";
 
 /** The text deltas of a recorded stream, in order. */
 function deltas(name: string): string[] {

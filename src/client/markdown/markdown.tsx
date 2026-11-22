@@ -4,7 +4,7 @@ import rehypeKatex from "rehype-katex";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { normalizeMath, PENDING_MATH } from "../../shared/normalizeMath.ts";
+import { normalizeMath, PENDING_MATH } from "../../shared/normalize-math.ts";
 import { rehypeMathGlue } from "./glue.ts";
 
 const remarkPlugins: Options["remarkPlugins"] = [

@@ -12,7 +12,7 @@ import type {
 } from "../shared/protocol.ts";
 import { SessionStore, useSession } from "./store.ts";
 import type { ThreadActions } from "./thread/model.ts";
-import { Thread } from "./thread/Thread.tsx";
+import { Thread } from "./thread/thread.tsx";
 
 /** Sessions get a course from step 3's folder; until then they share this one. */
 const COURSE = "general";

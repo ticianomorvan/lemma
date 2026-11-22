@@ -35,7 +35,7 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 | `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
 | `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({sessionId, resume?}) → {push, interrupt, close, events}`; step 3 adds `seed?` |
 | `tools/calc` | in-process MCP server (`createSdkMcpServer`, `tool()`), mathjs + distributions in a Worker | `calc(expr) → value \| error` |
-| `shared` | zod protocol schemas, the event reducer, `normalizeMath` (assistant-ui's delimiter and currency transforms, vendored unchanged in `shared/vendor/`, plus holding an unclosed display formula as raw source) | imported by server and client, so both reduce events identically |
+| `shared` | zod protocol schemas, the event reducer, `normalize-math` (`\(…\)`/`\[…\]` to dollars and escaping currency, after assistant-ui's heuristics, outside code; plus holding an unclosed display formula as raw source) | imported by server and client, so both reduce events identically |
 | `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store (`client/store.ts`); the thread view and composer in `client/thread/`; Markdown + KaTeX in `client/markdown/` | — |
 
 Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake is what makes every integration and Playwright test run offline.

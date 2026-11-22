@@ -9,7 +9,7 @@
 import { ArrowDown, ArrowUp, Square } from "lucide-react";
 import { useRef } from "react";
 import { cn } from "#lib/utils.ts";
-import { Markdown } from "../markdown/Markdown.tsx";
+import { Markdown } from "../markdown/markdown.tsx";
 import type { SessionState } from "../store.ts";
 import { useComposer, useStickToBottom, useStopOnEscape } from "./hooks.ts";
 import {
@@ -22,7 +22,7 @@ import {
 	threadItems,
 } from "./model.ts";
 import { TurnBlocks } from "./parts.tsx";
-import { IndexRail, useActiveCell } from "./ThreadIndex.tsx";
+import { IndexRail, useActiveCell } from "./thread-index.tsx";
 
 const STATUS: Record<string, string> = {
 	streaming: "Respondiendo",

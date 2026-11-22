@@ -63,7 +63,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
   - An interrupt ends the turn with `reason: interrupted`.
 
 ### 2. Math chat (first usable build)
-- **What:** a client store fed by the WebSocket, a thread view, the composer (with stop), and `shared/normalizeMath`.
+- **What:** a client store fed by the WebSocket, a thread view, the composer (with stop), and `shared/normalize-math`.
 - **Layout (chosen from three prototypes):** the notebook ("Cuaderno"): each exchange is a cell, the question a card, the answer full-width serif; the composer docked at the bottom with a floating stop pill; an index of questions in the right margin (a popover on narrow screens).
 - **Rendering:** Markdown through `react-markdown` + `remark-math` + `rehype-katex`, plus `copy-tex`. Punctuation after math is kept on the same line.
 - **Prompt:** the system-prompt append with the answer conventions and language rules.

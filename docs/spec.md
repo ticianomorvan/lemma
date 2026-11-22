@@ -30,7 +30,7 @@ It worked when the user can do these in one sitting with no terminal or editor o
 There is no code yet, and this is a new open-source repository (MIT). Things to borrow from:
 - **Claudian** (MIT, an Obsidian plugin that runs Claude Code over a Markdown folder) is a reference for driving the agent over a notes folder. The user doesn't use Obsidian, so it is not a base to build on.
 - **Opcode** (formerly Claudia, Tauri 2 GUI for Claude Code) is the reference for sidecar and session handling if we wrap the app in Tauri later. Verify its license before copying any code.
-- **assistant-ui's LaTeX guide** is the source of `normalizeMathDelimiters` and `escapeCurrencyDollars`, the delimiter fixes for model output.
+- **assistant-ui's LaTeX guide** is the source of the delimiter and currency heuristics in `shared/normalize-math.ts` (rewritten in about 180 lines; their scanner is 2,100 lines because it also tracks HTML blocks and indented code, which our answers do not use).
 
 ## Design
 
