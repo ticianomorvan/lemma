@@ -10,7 +10,7 @@
 @import "@fontsource-variable/source-serif-4/wght-italic.css";
 
 @custom-variant dark {
-	&:where([data-theme="dark"], [data-theme="dark"] *) {
+	&:where(:root[data-theme="dark"], :root[data-theme="dark"] *) {
 		@slot;
 	}
 	@media (prefers-color-scheme: dark) {

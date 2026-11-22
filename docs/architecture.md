@@ -158,7 +158,7 @@ study/
   - Fonts (Inter, Source Serif 4) are self-hosted from `@fontsource-variable`, so the app works offline.
   - Lazy-loaded chunks for KaTeX extras, Vega, Mermaid, viz.js and typst.ts. The PWA is a manifest plus a service worker that caches only the app shell.
 - **Commands.**
-  - `bun run dev`: the Vite dev server (port 5173, with React Fast Refresh) and the Bun server (port 4317) side by side. Vite forwards `/api` and `/ws` to Bun without rewriting `Origin`, so the server's own checks still apply.
+  - `bun run dev`: the Vite dev server (port 5173, with React Fast Refresh) and the Bun server (port 4317) side by side. Vite forwards `/api` and `/ws` to Bun without rewriting `Origin`, so the server's own checks still apply. In dev the server therefore sees `Origin: http://127.0.0.1:5173`, and the step 4 checks must allow it only in dev.
   - `bun run build`: `vite build`, which bundles the client to `dist/`.
   - `bun run start`: serve `dist/`, `/api` and `/ws` on one port.
 - **Tests.**
