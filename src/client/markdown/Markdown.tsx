@@ -54,19 +54,19 @@ export const Markdown = memo(function Markdown({
 }: {
 	text: string;
 	/**
-	 * The student's own text: line breaks stay line breaks, and raw HTML (such
-	 * as a `<!-- comment -->`) is hidden, as in any Markdown editor.
+	 * The student's own text: line breaks stay line breaks, and `<!-- comments -->`
+	 * are hidden, as in any Markdown editor. Other `<…>` stays text, so `x<y`
+	 * is never taken for a tag.
 	 */
 	question?: boolean;
 }) {
 	return (
 		<ReactMarkdown
 			remarkPlugins={question ? remarkPluginsWithBreaks : remarkPlugins}
-			skipHtml={question}
 			rehypePlugins={rehypePlugins}
 			components={components}
 		>
-			{normalizeMath(text)}
+			{normalizeMath(question ? text.replace(/<!--[\s\S]*?-->/g, "") : text)}
 		</ReactMarkdown>
 	);
 });

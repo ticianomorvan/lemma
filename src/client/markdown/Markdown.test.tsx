@@ -79,6 +79,13 @@ describe("Markdown", () => {
 		expect(out).not.toContain("fixture");
 	});
 
+	test("a question with < and > keeps them as text", () => {
+		const out = renderToStaticMarkup(
+			<Markdown text="Probar que x<y and z>w" question />,
+		);
+		expect(out).toContain("x&lt;y and z&gt;w");
+	});
+
 	test("currency stays text", () => {
 		const out = html("Cuesta $30 y $40.");
 		expect(out).not.toContain("katex");

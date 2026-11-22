@@ -12,6 +12,14 @@ export type ThreadItem =
 	| { kind: "queued"; user: UserMessage; position: number }
 	| { kind: "outgoing"; message: Outgoing };
 
+/** What the thread can ask the app to do. */
+export type ThreadActions = {
+	send: (text: string) => void;
+	stop: () => void;
+	/** Drops a failed outgoing message and returns its text. */
+	discard: (clientMsgId: string) => string;
+};
+
 export type TurnState = "streaming" | "completed" | "interrupted" | "error";
 
 export function threadItems({ view, outgoing }: SessionState): ThreadItem[] {
@@ -52,6 +60,12 @@ export function visibleBlocks(turn: Turn): Block[] {
 	);
 }
 
+const TOOL_VERBS: Record<string, [doing: string, done: string]> = {
+	Read: ["Leyendo", "Leyó"],
+	Grep: ["Buscando", "Buscó"],
+	Glob: ["Listando", "Listó"],
+};
+
 /** "Leyó notas.md" from a tool block's partial JSON input. */
 export function toolLabel(block: Block): string {
 	const input = parseLoose(block.text);
@@ -59,23 +73,11 @@ export function toolLabel(block: Block): string {
 		(typeof input.file_path === "string" && basename(input.file_path)) ||
 		(typeof input.pattern === "string" && input.pattern) ||
 		"";
-	const verb =
-		block.name === "Read"
-			? "Leyendo"
-			: block.name === "Grep"
-				? "Buscando"
-				: block.name === "Glob"
-					? "Listando"
-					: (block.name ?? "Herramienta");
-	const past =
-		block.name === "Read"
-			? "Leyó"
-			: block.name === "Grep"
-				? "Buscó"
-				: block.name === "Glob"
-					? "Listó"
-					: (block.name ?? "Herramienta");
-	return `${block.result ? past : verb}${target ? ` ${target}` : ""}`;
+	const [doing, done] = TOOL_VERBS[block.name ?? ""] ?? [
+		block.name ?? "Herramienta",
+		block.name ?? "Herramienta",
+	];
+	return `${block.result ? done : doing}${target ? ` ${target}` : ""}`;
 }
 
 function parseLoose(json: string): Record<string, unknown> {
@@ -88,3 +90,19 @@ function parseLoose(json: string): Record<string, unknown> {
 }
 
 const basename = (path: string) => path.split("/").pop() ?? path;
+
+/** One line of plain text: no HTML comments, math delimiters or extra spaces. */
+export const snippet = (text: string) =>
+	text
+		.replace(/<!--[\s\S]*?-->/g, "")
+		.replace(/\$+|\\[()[\]]/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+
+/** A stable React key for a message, whether outgoing, queued or answered. */
+export const itemKey = (item: ThreadItem) =>
+	item.kind === "turn"
+		? item.turn.user.clientMsgId
+		: item.kind === "queued"
+			? item.user.clientMsgId
+			: item.message.clientMsgId;

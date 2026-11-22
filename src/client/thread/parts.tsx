@@ -1,13 +1,5 @@
 import { ChevronRight, FileText } from "lucide-react";
-import {
-	type KeyboardEvent,
-	type RefObject,
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useRef,
-	useState,
-} from "react";
+import { useState } from "react";
 import {
 	Collapsible,
 	CollapsibleContent,
@@ -17,14 +9,6 @@ import { cn } from "#lib/utils.ts";
 import type { Block, Turn } from "../../shared/protocol.ts";
 import { Markdown } from "../markdown/Markdown.tsx";
 import { toolLabel, visibleBlocks } from "./model.ts";
-
-/** Everything a thread variant gets from the app. */
-export type ThreadActions = {
-	send: (text: string) => void;
-	stop: () => void;
-	/** Drops a failed outgoing message and returns its text. */
-	discard: (clientMsgId: string) => string;
-};
 
 /** The blocks of one assistant turn: thinking, tools and answer text. */
 export function TurnBlocks({
@@ -117,103 +101,4 @@ function ToolRow({ block }: { block: Block }) {
 			</span>
 		</div>
 	);
-}
-
-// ── Composer logic ───────────────────────────────────────────────────────────
-
-const coarse = () =>
-	typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
-
-/**
- * Composer state and keys: Enter sends (a newline on touch screens), Shift+Enter
- * is a newline, Esc stops a running answer. Sending while Claude answers
- * queues the message.
- */
-export function useComposer({
-	running,
-	actions,
-}: {
-	running: boolean;
-	actions: ThreadActions;
-}) {
-	const [text, setText] = useState("");
-	const ref = useRef<HTMLTextAreaElement>(null);
-	const canSend = text.trim().length > 0;
-	const submit = useCallback(() => {
-		if (!text.trim()) return;
-		actions.send(text.trim());
-		setText("");
-		ref.current?.focus();
-	}, [text, actions]);
-	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-		if (e.nativeEvent.isComposing) return;
-		if (e.key === "Enter" && !e.shiftKey && !coarse()) {
-			e.preventDefault();
-			submit();
-		} else if (e.key === "Escape" && running) {
-			e.preventDefault();
-			actions.stop();
-		}
-	};
-	const restore = (value: string) => {
-		setText(value);
-		ref.current?.focus();
-	};
-	return { text, setText, ref, canSend, submit, onKeyDown, restore };
-}
-
-/** Esc anywhere on the page stops a running answer. */
-export function useStopOnEscape(running: boolean, stop: () => void) {
-	useEffect(() => {
-		if (!running) return;
-		const onKey = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape" && !e.defaultPrevented) stop();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [running, stop]);
-}
-
-// ── Scrolling ────────────────────────────────────────────────────────────────
-
-/**
- * Keeps a scroll container pinned to the bottom while content grows, as long
- * as the reader is already there. Scrolling up releases it.
- */
-export function useStickToBottom(
-	scroller: RefObject<HTMLElement | null>,
-	content: RefObject<HTMLElement | null>,
-) {
-	const [atBottom, setAtBottom] = useState(true);
-	const pinned = useRef(true);
-
-	useLayoutEffect(() => {
-		const el = scroller.current;
-		const inner = content.current;
-		if (!el || !inner) return;
-		el.scrollTop = el.scrollHeight;
-		const onScroll = () => {
-			const near = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-			pinned.current = near;
-			setAtBottom(near);
-		};
-		const observer = new ResizeObserver(() => {
-			if (pinned.current) el.scrollTop = el.scrollHeight;
-		});
-		observer.observe(inner);
-		el.addEventListener("scroll", onScroll, { passive: true });
-		return () => {
-			observer.disconnect();
-			el.removeEventListener("scroll", onScroll);
-		};
-	}, [scroller, content]);
-
-	const scrollToBottom = useCallback(() => {
-		const el = scroller.current;
-		if (!el) return;
-		pinned.current = true;
-		el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-	}, [scroller]);
-
-	return { atBottom, scrollToBottom, pin: () => (pinned.current = true) };
 }

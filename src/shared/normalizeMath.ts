@@ -31,7 +31,8 @@ export function normalizeMath(text: string): string {
  */
 export function holdOpenMath(text: string): string {
 	const open = unclosedMath(text);
-	if (open === -1) return text;
+	// A lone `$` opening the last line is half of a `$$` still on its way.
+	if (open === -1) return text.replace(/(^|\n)[ \t]*\$$/, "$1");
 	const opener = 2; // `$$`, `\[` and `\(` are all two characters
 	const head = text.slice(0, open).replace(/[ \t]+$/, "");
 	const body = text.slice(open + opener).replace(/^\s*\n/, "");

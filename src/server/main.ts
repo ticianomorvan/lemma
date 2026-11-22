@@ -23,9 +23,9 @@ console.log(
 
 /**
  * `LEMMA_FAKE=1` replays recorded streams instead of calling Claude, for
- * Playwright and for trying the UI offline. A message ending in a paragraph
- * `<!--fixture:<name>-->` replays `test/fixtures/streams/<name>.jsonl` (an
- * HTML block, so the thread renders nothing for it); others replay
+ * Playwright and for trying the UI offline. A message containing
+ * `<!--fixture:<name>-->` (best as its own last paragraph) replays `test/fixtures/streams/<name>.jsonl` (an
+ * HTML comment, which the thread hides); others replay
  * `math-rich`. `LEMMA_FAKE_DELAY_MS` paces each SDK message (25 ms).
  */
 function driver(): AgentDriver {

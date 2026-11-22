@@ -11,14 +11,17 @@ import { useRef } from "react";
 import { cn } from "#lib/utils.ts";
 import { Markdown } from "../markdown/Markdown.tsx";
 import type { SessionState } from "../store.ts";
-import { cellId, isRunning, type ThreadItem, threadItems } from "./model.ts";
+import { useComposer, useStickToBottom, useStopOnEscape } from "./hooks.ts";
 import {
+	cellId,
+	isRunning,
+	itemKey,
+	snippet,
 	type ThreadActions,
-	TurnBlocks,
-	useComposer,
-	useStickToBottom,
-	useStopOnEscape,
-} from "./parts.tsx";
+	type ThreadItem,
+	threadItems,
+} from "./model.ts";
+import { TurnBlocks } from "./parts.tsx";
 import { IndexRail, useActiveCell } from "./ThreadIndex.tsx";
 
 const STATUS: Record<string, string> = {
@@ -40,13 +43,9 @@ export function Thread({
 	const content = useRef<HTMLDivElement>(null);
 	const { atBottom, scrollToBottom, pin } = useStickToBottom(scroller, content);
 	const composer = useComposer({
-		running,
-		actions: {
-			...actions,
-			send: (text) => {
-				pin();
-				actions.send(text);
-			},
+		send: (text) => {
+			pin();
+			actions.send(text);
 		},
 	});
 	useStopOnEscape(running, actions.stop);
@@ -70,13 +69,7 @@ export function Thread({
 					{items.length === 0 && <Empty />}
 					{items.map((item, i) => (
 						<Cell
-							key={
-								item.kind === "turn"
-									? item.turn.id
-									: item.kind === "queued"
-										? item.user.turnId
-										: item.message.clientMsgId
-							}
+							key={itemKey(item)}
 							item={item}
 							first={i === 0}
 							onRetry={actions.send}
@@ -209,7 +202,7 @@ function Cell({
 		<section
 			id={cellId(turn.id)}
 			tabIndex={-1}
-			aria-label={`Pregunta: ${turn.user.text.slice(0, 80)}`}
+			aria-label={`Pregunta: ${snippet(turn.user.text).slice(0, 80)}`}
 			className={cn(
 				"turn-in scroll-mt-4 py-6 outline-none",
 				divider,

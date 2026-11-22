@@ -99,6 +99,11 @@ describe("half-received chunks", () => {
 		expect(normalizeMath("```tex\n$$x")).toBe("```tex\n$$x");
 	});
 
+	test("half of a $$ at the start of the last line is dropped", () => {
+		expect(normalizeMath("se cancela $y$:\n\n$")).toBe("se cancela $y$:\n\n");
+		expect(normalizeMath("Cuesta \\$")).toBe("Cuesta \\$");
+	});
+
 	test("an answer interrupted mid-formula is held too", () => {
 		expect(normalizeMath("Sea\n$$\nx &= 1")).toBe(
 			"Sea\n\n~~~math-pending\nx &= 1\n~~~\n",

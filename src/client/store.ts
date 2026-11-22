@@ -97,8 +97,11 @@ export class SessionStore {
 		return message?.text ?? "";
 	}
 
+	/** Stops the running answer. A failure is harmless: the answer just goes on. */
 	async interrupt() {
-		await fetch(`/api/sessions/${this.id}/interrupt`, { method: "POST" });
+		await fetch(`/api/sessions/${this.id}/interrupt`, { method: "POST" }).catch(
+			() => {},
+		);
 	}
 
 	close() {
@@ -169,9 +172,8 @@ export class SessionStore {
 		// Outgoing messages the server has broadcast are now in the view.
 		if (next.view && next.outgoing.length > 0) {
 			const seen = sentIds(next.view);
-			const outgoing = next.outgoing.filter(
-				(m) => m.failed || !seen.has(m.clientMsgId),
-			);
+			// Even a "failed" one: the POST may have reached the server anyway.
+			const outgoing = next.outgoing.filter((m) => !seen.has(m.clientMsgId));
 			if (outgoing.length !== next.outgoing.length) next.outgoing = outgoing;
 		}
 		this.state = next;

@@ -12,7 +12,7 @@ import {
 	PopoverTrigger,
 } from "#components/ui/popover.tsx";
 import { cn } from "#lib/utils.ts";
-import { cellId, type ThreadItem } from "./model.ts";
+import { cellId, snippet, type ThreadItem } from "./model.ts";
 
 type TurnItem = Extract<ThreadItem, { kind: "turn" }>;
 
@@ -46,8 +46,13 @@ export function useActiveCell(
 		};
 		measure();
 		el.addEventListener("scroll", onScroll, { passive: true });
+		// Cells move when the answer grows or the window resizes.
+		const observer = new ResizeObserver(onScroll);
+		observer.observe(el);
+		if (el.firstElementChild) observer.observe(el.firstElementChild);
 		return () => {
 			el.removeEventListener("scroll", onScroll);
+			observer.disconnect();
 			cancelAnimationFrame(frame);
 		};
 	}, [scroller, key]);
@@ -69,14 +74,6 @@ function jump(scroller: RefObject<HTMLElement | null>, id: string) {
 	});
 	cell.focus({ preventScroll: true });
 }
-
-/** One line of plain text: no HTML comments, math delimiters or extra spaces. */
-export const snippet = (text: string) =>
-	text
-		.replace(/<!--[\s\S]*?-->/g, "")
-		.replace(/\$+|\\[()[\]]/g, "")
-		.replace(/\s+/g, " ")
-		.trim();
 
 export function IndexRail({
 	turns,

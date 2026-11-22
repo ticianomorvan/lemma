@@ -37,10 +37,13 @@ const ev = (seq: number, e: SessionEvent, epoch = 1): ServerMessage => ({
 	seq,
 	e,
 });
-const userMessage = (turnId: string): SessionEvent => ({
+const userMessage = (
+	turnId: string,
+	clientMsgId = `c-${turnId}`,
+): SessionEvent => ({
 	type: "user_message",
 	turnId,
-	clientMsgId: `c-${turnId}`,
+	clientMsgId,
 	from: "local",
 	text: turnId,
 	attachments: [],
@@ -48,6 +51,7 @@ const userMessage = (turnId: string): SessionEvent => ({
 });
 
 const original = globalThis.WebSocket;
+const originalFetch = globalThis.fetch;
 let store: SessionStore;
 let socket: StubSocket;
 
@@ -61,6 +65,7 @@ beforeEach(() => {
 afterEach(() => {
 	store.close();
 	globalThis.WebSocket = original;
+	globalThis.fetch = originalFetch;
 });
 
 const subs = () => socket.sent.filter((m) => (m as { t: string }).t === "sub");
@@ -112,4 +117,16 @@ test("a dropped socket shows offline and reconnects", async () => {
 test("an unknown session is reported as missing", () => {
 	socket.push({ t: "error", session: "s1", code: "not_found", message: "" });
 	expect(store.getSnapshot().connection).toBe("missing");
+});
+
+test("a failed send that the server got anyway leaves no duplicate", async () => {
+	globalThis.fetch = (async () => {
+		throw new Error("network down");
+	}) as unknown as typeof fetch;
+	socket.push(snapshot(1));
+	await store.send("hola");
+	const [failed] = store.getSnapshot().outgoing;
+	expect(failed?.failed).toBe("network down");
+	socket.push(ev(2, userMessage("t1", failed?.clientMsgId)));
+	expect(store.getSnapshot().outgoing).toEqual([]);
 });

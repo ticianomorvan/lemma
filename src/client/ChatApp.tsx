@@ -4,14 +4,14 @@
  * sees the same thread. `/` opens the latest session or starts one.
  */
 import { SquarePen } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_NAME } from "../shared/app.ts";
 import type {
 	CreateSessionResponse,
 	StateResponse,
 } from "../shared/protocol.ts";
 import { SessionStore, useSession } from "./store.ts";
-import type { ThreadActions } from "./thread/parts.tsx";
+import type { ThreadActions } from "./thread/model.ts";
 import { Thread } from "./thread/Thread.tsx";
 
 /** Sessions get a course from step 3's folder; until then they share this one. */
@@ -22,19 +22,30 @@ const sessionFromPath = () =>
 
 export function ChatApp() {
 	const [id, setId] = useState(sessionFromPath);
+	const [failed, setFailed] = useState(false);
+	const [attempt, setAttempt] = useState(0);
+	const forget = useCallback(() => open(null, setId, "replace"), []);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-runs it on retry
 	useEffect(() => {
 		if (id) return;
 		let cancelled = false;
+		setFailed(false);
 		void (async () => {
-			const state = (await (await fetch("/api/state")).json()) as StateResponse;
-			const latest = state.sessions.at(-1)?.id ?? (await createSession());
-			if (!cancelled) open(latest, setId, "replace");
+			try {
+				const res = await fetch("/api/state");
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				const state = (await res.json()) as StateResponse;
+				const latest = state.sessions.at(-1)?.id ?? (await createSession());
+				if (!cancelled) open(latest, setId, "replace");
+			} catch {
+				if (!cancelled) setFailed(true);
+			}
 		})();
 		return () => {
 			cancelled = true;
 		};
-	}, [id]);
+	}, [id, attempt]);
 
 	useEffect(() => {
 		const onPop = () => setId(sessionFromPath());
@@ -51,7 +62,12 @@ export function ChatApp() {
 				<span className="flex-1" />
 				<button
 					type="button"
-					onClick={async () => open(await createSession(), setId, "push")}
+					onClick={() =>
+						createSession().then(
+							(created) => open(created, setId, "push"),
+							() => {},
+						)
+					}
 					className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-[13px] text-muted-foreground transition-[transform,color,border-color] duration-150 ease-out active:scale-[0.97] hover:border-input hover:text-foreground"
 				>
 					<SquarePen aria-hidden className="size-3.5" />
@@ -60,11 +76,18 @@ export function ChatApp() {
 			</header>
 			<main className="min-h-0">
 				{id ? (
-					<Session
-						key={id}
-						id={id}
-						onMissing={() => open(null, setId, "replace")}
-					/>
+					<Session key={id} id={id} onMissing={forget} />
+				) : failed ? (
+					<div className="grid h-full place-content-center justify-items-center gap-3 text-center text-sm text-muted-foreground">
+						<p>No se pudo conectar con el servidor de Lemma.</p>
+						<button
+							type="button"
+							onClick={() => setAttempt((n) => n + 1)}
+							className="h-8 rounded-lg border bg-card px-3 text-foreground transition-transform duration-150 ease-out active:scale-[0.97]"
+						>
+							Reintentar
+						</button>
+					</div>
 				) : null}
 			</main>
 		</div>
@@ -126,6 +149,7 @@ async function createSession(): Promise<string> {
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ course: COURSE }),
 	});
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	return ((await res.json()) as CreateSessionResponse).id;
 }
 
