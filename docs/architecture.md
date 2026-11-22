@@ -1,0 +1,179 @@
+# Lemma: architecture
+
+Companion to [spec.md](spec.md), which settles the product, the rendering and auth. Decided 2026-11-22.
+
+## How this was decided
+
+- **The comparison.** Two candidates designed the architecture independently (Opus 5.5 and Sonnet 5.5), from the same brief. Neither saw the scoring criteria, which I wrote before they started.
+- **Scores.**
+
+  | Criterion (1–5) | A (Opus) | B (Sonnet) |
+  |---|---|---|
+  | Fewest moving parts | 4 | 4 |
+  | Uses what the framework ships | 5 | 5 |
+  | Stateless clients | 5 | 5 |
+  | Folder is the truth | 5 | 3 |
+  | Little for callers to know | 4 | 5 |
+
+- **Where they agreed:** one Bun process with plain `Bun.serve` (no framework); a React client bundled by Bun; one long-lived streaming `query()` per open session; a FIFO send queue; snapshot plus sequence numbers instead of replay; a swappable `AgentDriver`; `calc` in a Worker; deny-by-default path checks.
+- **Result.** A is the base. From B I took: commands over HTTP with a downstream-only WebSocket, server-assigned session ids, auth even on loopback, and `WebFetch` host limits.
+
+## Processes
+
+There is one process, `bun run start`. The Agent SDK spawns one `claude` child per *live* session. A session that has been idle for 10 minutes is closed, so no processes linger.
+
+## Modules
+
+There is one package, with no workspaces: `src/server`, `src/client`, `src/shared`.
+
+| Module | Owns | Interface (what callers know) |
+|---|---|---|
+| `http` | `Bun.serve` routes, static `dist/`, WS upgrade, auth gate, zod validation | route table |
+| `auth` | pairing codes, device tokens (hashed), Host/Origin checks | `check(req) → Device\|null`, `startPairing() → {url, expiresAt}`, `redeem(code)`, `revoke(id)` |
+| `folder` | all I/O under the study root: path jail (`realpath`), atomic writes, recursive `fs.watch` (150 ms debounce, our own writes ignored by content hash) | `read`, `writeAtomic`, `list`, `saveAttachment`, `onChange` |
+| `transcript` | Markdown session file ⇄ typed turns | `parse(md) → {meta, turns}`, `appendTurn(path, turn)`, `bodyHash(md)` |
+| `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `snapshot`, `send`, `interrupt`, `subscribe(id, ws)` |
+| `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events | `AgentDriver.start({sessionId, resume?, seed?}) → {push, interrupt, close, events}` |
+| `tools/calc` | in-process MCP server (`createSdkMcpServer`, `tool()`), mathjs + distributions in a Worker | `calc(expr) → value \| error` |
+| `shared` | zod protocol schemas, the event reducer, `normalizeMath` | imported by server and client, so both reduce events identically |
+| `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store | — |
+
+Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake is what makes every integration and Playwright test run offline.
+
+## Sessions and the source of truth
+
+**The Markdown transcript in the folder is the truth.** The SDK's own session file is a cache, used only to make resuming cheap.
+- **Why.** The SDK's storage sits under `~/.claude/projects/` and is keyed by the folder path. It is lost when the folder moves or the cache is cleaned. Redirecting it would mean touching the user's Claude Code config, which the auth constraint forbids.
+- **Rejected: B's choice**, the SDK session as truth with the Markdown as a projection. It keeps history and model memory identical, but it breaks "the folder is the data model".
+
+**Front matter:** `id`, `course`, `title`, `created`, `mode`, `sdk_session_id`, `sdk_body_hash`.
+
+**Lifecycle:**
+1. **Create.** `POST /api/sessions` generates the UUID and writes the `.md` before the first turn. It passes that UUID to the SDK as `sessionId`.
+2. **Open.** The first send starts `query({prompt: AsyncIterable<SDKUserMessage>, options})` in streaming-input mode, with these options:
+   - `cwd`: the study root.
+   - `settingSources: ['project']`, which loads `.claude/skills` and keeps the user's global hooks and MCP servers out.
+   - `systemPrompt: {type: 'preset', preset: 'claude_code', append: conventions + course}`.
+   - `includePartialMessages: true`.
+   - `mcpServers: {study}`.
+   - `canUseTool`, the path jail.
+3. **Stream.** SDK messages are mapped to our own events. Raw SDK messages never reach clients, so an SDK update can't break the protocol.
+4. **Write the transcript.**
+   - The user message is appended when it is accepted.
+   - The assistant turn is appended at `turn_end`, with an atomic write.
+   - The transcript is append-only and earlier turns are never rewritten. If the file changed on disk during a turn, the server re-reads it and appends to that version, so the user's edit survives.
+5. **Interrupt.** `Query.interrupt()`. The partial answer is appended, marked *(interrupted)*.
+6. **Resume.** The server uses `resume: sdk_session_id` when the SDK session still exists *and* the body hash matches the file. If either check fails, it starts a fresh SDK session seeded with the transcript and records the new id.
+
+## Client protocol
+
+**Commands go over HTTP, and the WebSocket only pushes from the server.** Every action then shares one auth path and can be tested with `curl`.
+
+**HTTP:**
+- `GET /api/state` returns courses, sessions (from the front matter) and, for the desktop, devices.
+- `POST /api/sessions {course, title?, mode?}` returns `{id}`. `PATCH /api/sessions/:id {title, mode}`.
+- `GET /api/sessions/:id` returns a snapshot, the same shape as the WebSocket one.
+- `POST /api/sessions/:id/messages {clientMsgId, text, anchor?: {path, page, text}, attachmentIds?}`
+- `POST /api/sessions/:id/notes {anchor, text?}`: your own highlight or note, stored in the transcript, with no Claude turn. Claude sees notes as context on the next send.
+- `POST /api/sessions/:id/interrupt`
+- `POST /api/sessions/:id/attachments` (multipart image) returns `{id, path}`.
+- `GET /api/tree` and `GET /files/*path` (with Range support for pdf.js).
+- `POST /api/pair`, `GET /pair/:code`, `GET /api/devices`, `DELETE /api/devices/:id`.
+
+**WebSocket `/ws`:**
+- From the client: `{t: 'sub' | 'unsub', session}`.
+- From the server:
+  - `{t: 'snapshot', session, epoch, seq, status, meta, turns, inflight?, queue}`
+  - `{t: 'ev', session, epoch, seq, e}`
+  - `{t: 'folder', path, kind}`
+
+  `e` is one of:
+  - `user_message {turnId, clientMsgId, from, text, anchor?, attachments, queued}`
+  - `note {id, anchor, text?}`
+  - `turn_start {turnId}`
+  - `block_start {id, kind: text|thinking|tool, name?}`, then `delta {id, text}`, then `block_end {id}`
+  - `tool_result {id, ok, summary}`
+  - `turn_end {turnId, reason, usage}`
+  - `error {code, message, clientMsgId?}`
+
+**Joining or reconnecting.** A `sub` gets the snapshot, and the socket subscribes to the topic `s:<id>` in the same tick. The server is single-threaded, so no event can fall between the two.
+- The client drops any event with `seq <= snapshot.seq`.
+- On a seq gap, or a changed `epoch` (the server restarted), it re-subscribes.
+- No replay buffer is kept: one session's snapshot is small.
+- A socket that falls behind (`ws.send()` returns 0 or -1) is closed and re-subscribes.
+
+**Two clients sending at once.** Messages are queued in arrival order and broadcast at once with `queued: true`, then fed to the SDK one turn at a time. Any client can interrupt. Each sender matches its own message to the broadcast copy by `clientMsgId`.
+
+## Views (client-only)
+
+A session is one thread. Its views are lenses over that thread, chosen per client, and they change nothing on the server.
+- **Read.** The material is in the centre. Anchored turns and notes for the visible page show as margin cards. Opening the chat panel shows the full thread beside the page, and the cards fold into numbered pins in the page gutter. Clicking a pin scrolls the panel.
+- **Practice.** The thread as a notebook document. Anchors become citations that open the page in a drawer. Phone photos go here.
+- **Switching** is instant (a keyboard shortcut and a segmented control, with no animation). Each client keeps its own view, so the desktop can be in Read while the phone is in Practice.
+- **In the transcript,** an anchor is a blockquote linking `materials/<file>.pdf#page=N`, and a note is a `> [!note]` blockquote. Both stay readable in any editor.
+
+## Files
+
+```
+study/
+  .claude/skills/<mode>/SKILL.md
+  <course>/materials/   <course>/notes/
+  <course>/sessions/2026-11-22-<slug>.md
+  <course>/sessions/2026-11-22-<slug>/001-photo.jpg   attachments, linked from the .md
+  inbox/                photos sent while no session is open
+~/Library/Application Support/lemma/   config.json (folder, port), devices.json (token hashes)
+```
+
+- **Photos.**
+  - The phone downscales each photo to JPEG with a long edge of at most 2048 px in a canvas before upload. This avoids HEIC files and a native image library on the server.
+  - The server sends it to Claude as an `image` block in the next user message.
+  - The `.md` links it as a normal Markdown image.
+  - Rejected: B's "Claude `Read`s the path". It costs a tool round trip on every photo.
+- **External edits.** A `folder` event makes an open PDF or note pane show a "changed on disk" chip. The app never edits notes; Claude's `Edit` tool already refuses to edit a file that changed after it was read.
+
+## Security
+
+- **Network and auth.**
+  - The server binds `127.0.0.1`, and LAN mode is on only while a paired device exists.
+  - **Every request needs a device cookie, loopback included**, so another local process can't drive an agent that writes files. `bun run start` opens a one-time `/pair/<code>` URL for the desktop. The phone pairs by QR code.
+  - Codes are 128-bit, single use and expire after 5 minutes. Tokens are 256-bit, stored as an `HttpOnly; SameSite=Strict` cookie, and only their hash is kept on the server.
+  - The `Host` header is checked against an allow-list (this blocks DNS rebinding). `Origin` is checked on POSTs and WebSocket upgrades.
+- **Agent.**
+  - `disallowedTools: [Bash, NotebookEdit, Task]`.
+  - `canUseTool` resolves every path and allows only paths inside the root. Writes are denied under `.claude/` (except `skills/`), `sessions/` and `inbox/`.
+  - `WebFetch` is limited to public http(s) hosts and can be switched off. The remaining risk is a PDF injecting URLs into the conversation.
+- **`calc`.**
+  - A locked mathjs instance: `import`, `createUnit`, `evaluate`, `parse`, `simplify` and `derivative` are stubbed out.
+  - Only an allow-list of distribution functions is exposed.
+  - Input is capped at 2 KB and output at 10 KB.
+  - Each call runs in a Worker that is killed after 1 s.
+- **Accepted risk.** On the LAN, a cookie sent over plain HTTP can be sniffed. This is documented, and Tailscale Serve is the hardened option.
+
+## Stack
+
+- **Server.** Bun, with no framework, about 15 routes.
+- **Client.** React 19, bundled by Bun's HTML imports. Plain CSS with custom properties (tokens shared with the prototype). Lazy-loaded chunks for KaTeX extras, Vega, Mermaid, viz.js and typst.ts. The PWA is a manifest plus a service worker that caches only the app shell.
+- **Commands.**
+  - `bun run build`: bundle the client to `dist/`.
+  - `bun run start`: serve `dist/`, `/api` and `/ws` on one port.
+- **Tests.**
+  - `bun test`: the reducer, `normalizeMath`, the transcript round trip, `calc` (known values; `import`, `eval` and loops rejected), the path jail (symlink escapes), and auth.
+  - Integration with the fake driver: two clients receive identical events, a client joining mid-stream gets the snapshot plus the tail, an epoch change after restart, the reseed when the hash differs, and a 403 after a device is revoked.
+  - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context.
+  - One live smoke test, only under `LIVE=1`.
+- **Check at build time.** Bun HTML-import `routes`, the exact shapes of `stream_event` and `result`, and `getSessionInfo`. B's doc lookup failed, so neither candidate confirmed them.
+
+## Rejected
+
+- SQLite or an app-side event log, which would be a second store beside the files.
+- A replay ring buffer.
+- SSE.
+- Hono, Elysia or tRPC.
+- Vite or Next.js.
+- Workspaces.
+- An agent worker process.
+- A permission-prompt UI in v1, which would need a cross-client approval protocol.
+- `sharp`.
+- chokidar.
+- A Docker sandbox for `calc`.
+- One `query()` per turn, which loses interrupt and queuing and respawns `claude` every turn.

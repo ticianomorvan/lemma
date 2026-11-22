@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lemma — workspace prototype</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Caveat:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js"></script>
+<style>
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #efede7;
+  --paper: #fffdf8;
+  --ink: #1d1c1a;
+  --ink-2: #5f5c55;
+  --ink-3: #8f8b82;
+  --line: #e2dfd6;
+  --line-strong: #cfcbc0;
+  --accent: #3a56c5;
+  --accent-soft: #e6eafb;
+  --accent-ink: #ffffff;
+  --hl: #fbe9a6;
+  --hl-ink: #4a3d00;
+  --ok: #2f7d4f;
+  --warn: #a5521b;
+  --shadow: 0 1px 2px rgba(30, 28, 20, .06), 0 4px 16px rgba(30, 28, 20, .06);
+  --shadow-pop: 0 2px 6px rgba(30, 28, 20, .08), 0 12px 32px rgba(30, 28, 20, .14);
+  --radius: 10px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --read: "Source Serif 4", Georgia, serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161614; --surface: #1f1f1c; --surface-2: #2a2a26; --paper: #1b1b19;
+    --ink: #ecebe6; --ink-2: #b0ada4; --ink-3: #7f7c74; --line: #33332e; --line-strong: #46453f;
+    --accent: #8ea2ff; --accent-soft: #283056; --accent-ink: #10142a;
+    --hl: #5a4a10; --hl-ink: #fbe9a6; --ok: #6cc391; --warn: #e3a06e;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    --shadow-pop: 0 2px 6px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161614; --surface: #1f1f1c; --surface-2: #2a2a26; --paper: #1b1b19;
+  --ink: #ecebe6; --ink-2: #b0ada4; --ink-3: #7f7c74; --line: #33332e; --line-strong: #46453f;
+  --accent: #8ea2ff; --accent-soft: #283056; --accent-ink: #10142a;
+  --hl: #5a4a10; --hl-ink: #fbe9a6; --ok: #6cc391; --warn: #e3a06e;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  --shadow-pop: 0 2px 6px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--ui); -webkit-font-smoothing: antialiased; }
+#stage { height: 100%; }
+button { font: inherit; color: inherit; }
+.katex { font-size: 1.08em; }
+
+/* ---------- shared controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2);
+  cursor: pointer; font-size: 13px; white-space: nowrap;
+  transition: transform 160ms var(--ease-out), background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn:focus-visible, .chip:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { color: var(--ink); border-color: var(--line-strong); }
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.stop { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.icon-btn {
+  width: 30px; height: 30px; display: inline-grid; place-items: center; border: 0; border-radius: 8px;
+  background: transparent; color: var(--ink-2); cursor: pointer;
+  transition: transform 160ms var(--ease-out), background-color 150ms ease;
+}
+.icon-btn:active { transform: scale(0.95); }
+@media (hover: hover) and (pointer: fine) { .icon-btn:hover { background: var(--surface-2); color: var(--ink); } }
+svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.chip {
+  height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent;
+  color: var(--ink-2); font-size: 12.5px; cursor: pointer; transition: transform 160ms var(--ease-out), background-color 150ms ease, color 150ms ease;
+}
+.chip:active { transform: scale(0.97); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+/* ---------- material page ---------- */
+.page {
+  background: var(--paper); color: var(--ink); width: 100%; max-width: 640px; margin: 0 auto;
+  padding: 44px 52px 36px; border-radius: 4px; box-shadow: var(--shadow); font: 15.5px/1.62 var(--read);
+  position: relative;
+}
+.page .runner { font: 11px/1 var(--ui); color: var(--ink-3); letter-spacing: .02em; display: flex; justify-content: space-between; margin-bottom: 26px; }
+.page h2 { font: 600 19px/1.3 var(--read); margin: 0 0 12px; }
+.page p { margin: 0 0 12px; }
+.page .rule { margin: 14px 0 16px; text-align: center; }
+.page .folio { text-align: center; font: 11px var(--ui); color: var(--ink-3); margin-top: 22px; }
+.page .exercise { border-left: 2px solid var(--line-strong); padding-left: 12px; }
+mark.hl { background: var(--hl); color: var(--hl-ink); border-radius: 2px; padding: 0 1px; }
+mark.hl[data-n]::after {
+  content: attr(data-n); font: 600 10px/16px var(--ui); display: inline-grid; place-items: center; min-width: 16px; height: 16px;
+  border-radius: 8px; background: var(--accent); color: var(--accent-ink); margin-left: 4px; vertical-align: 2px;
+}
+
+.ask-float {
+  position: fixed; z-index: 50; transform-origin: 50% 100%;
+  animation: pop-in 160ms var(--ease-out);
+}
+@keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(.96); } }
+
+/* ---------- answers ---------- */
+.answer { font: 15px/1.65 var(--read); }
+.answer p { margin: 0 0 10px; }
+.answer .display { margin: 12px 0 14px; overflow-x: auto; overflow-y: hidden; padding: 2px 0; text-align: center; }
+.answer .block {
+  margin: 12px 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper);
+  overflow: hidden;
+}
+.answer .block-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--line); font: 12px var(--ui); color: var(--ink-3); }
+.answer .block-body { padding: 18px 14px; overflow-x: auto; display: flex; justify-content: center; }
+.seg-in { animation: seg-in 220ms var(--ease-out); }
+@keyframes seg-in { from { opacity: 0; transform: translateY(3px); } }
+.caret { display: inline-block; width: 7px; height: 1.05em; background: var(--accent); vertical-align: -2px; margin-left: 2px; border-radius: 1px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.interrupted { font: 12px var(--ui); color: var(--ink-3); font-style: italic; }
+@media (prefers-reduced-motion: reduce) {
+  .seg-in { animation: fade 150ms ease; }
+  .ask-float { animation: fade 120ms ease; }
+  .caret { animation: none; }
+}
+@keyframes fade { from { opacity: 0; } }
+
+/* proof tree */
+.pt { display: inline-flex; flex-direction: column; align-items: center; }
+.pt-prem { display: flex; gap: 1.6em; align-items: flex-end; }
+.pt-bar { align-self: stretch; border-top: 1.2px solid var(--ink); margin: 3px 0 2px; position: relative; min-width: 1.5em; }
+.pt-rule { position: absolute; left: 100%; top: -.78em; padding-left: 5px; font-size: .82em; white-space: nowrap; }
+.pt-concl, .pt-leaf { white-space: nowrap; padding: 0 .3em; }
+.pt-wrap { padding-right: 2.6em; font-size: 15px; }
+
+/* dfa */
+svg.dfa { width: 100%; max-width: 380px; height: auto; color: var(--ink); }
+svg.dfa text { font: italic 15px var(--read); fill: currentColor; }
+svg.dfa .lbl { font: 14px var(--read); font-style: normal; }
+
+/* photo */
+.photo {
+  width: 240px; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--line);
+  background: repeating-linear-gradient(#fbfaf4 0 27px, #d9e3f0 27px 28px); padding: 12px 14px 10px;
+  font: 500 19px/28px "Caveat", cursive; color: #233a7a; transform: rotate(-1deg);
+}
+.photo .ln { display: flex; gap: 10px; white-space: nowrap; }
+.photo .ln span:last-child { margin-left: auto; color: #4f5f8f; }
+.photo-meta { font: 12px var(--ui); color: var(--ink-3); margin-top: 6px; display: flex; align-items: center; gap: 6px; }
+
+/* quote chip */
+.quote {
+  border-left: 2px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0;
+  padding: 6px 10px; font: 13.5px/1.5 var(--read); color: var(--ink);
+}
+.quote .src { display: block; font: 11.5px var(--ui); color: var(--accent); margin-bottom: 2px; }
+
+/* composer */
+.composer {
+  border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow);
+  padding: 8px 8px 8px 12px; display: grid; gap: 6px;
+  transition: border-color 150ms ease;
+}
+.composer:focus-within { border-color: var(--accent); }
+.composer textarea {
+  border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); font: 14.5px/1.5 var(--ui);
+  min-height: 24px; max-height: 160px; padding: 4px 0;
+}
+.composer textarea::placeholder { color: var(--ink-3); }
+.composer .row { display: flex; align-items: center; gap: 6px; }
+.composer .row .spacer { flex: 1; }
+.composer .attached { display: flex; gap: 6px; flex-wrap: wrap; }
+.composer .attached .quote { flex: 1; position: relative; padding-right: 28px; }
+.composer .attached .x { position: absolute; top: 4px; right: 4px; }
+.modes { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* popover */
+.pop {
+  position: fixed; z-index: 60; width: 260px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow-pop); padding: 14px; animation: pop-in 180ms var(--ease-out);
+}
+.pop h4 { margin: 0 0 4px; font: 600 13px var(--ui); }
+.pop p { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); }
+.pop svg.qr { width: 100%; height: auto; display: block; background: #fff; border-radius: 6px; padding: 10px; }
+.pop .dev { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+
+/* thread (chat style) */
+.turn-user { display: grid; justify-items: end; gap: 6px; margin: 18px 0 6px; }
+.turn-user .bubble { background: var(--surface-2); border-radius: 14px 14px 4px 14px; padding: 8px 12px; max-width: 88%; font-size: 14.5px; }
+.turn-user .quote { max-width: 88%; }
+.turn-asst { margin: 6px 0 18px; }
+.turn-asst .meta { display: flex; align-items: center; gap: 8px; font: 12px var(--ui); color: var(--ink-3); margin-bottom: 6px; }
+.turn-asst .meta .mode { padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); }
+
+/* ================= Variant 1: Split ================= */
+.split { display: grid; grid-template-rows: 48px 1fr; height: 100%; }
+.topbar { display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.topbar .course { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.topbar .crumb { color: var(--ink-3); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.topbar .spacer { flex: 1; }
+.seg { display: none; background: var(--surface-2); border-radius: 8px; padding: 2px; }
+.seg button { border: 0; background: transparent; height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.split-main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(380px, 1fr); min-height: 0; }
+.pane { min-height: 0; display: grid; }
+.pane.material { grid-template-rows: 40px 1fr; border-right: 1px solid var(--line); background: var(--surface-2); }
+.pane-bar { display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 12.5px; color: var(--ink-2); border-bottom: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.pane-bar .file { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pane-scroll { overflow: auto; padding: 28px 24px 120px; }
+.pane.chat { grid-template-rows: 1fr auto; background: var(--bg); }
+.thread { overflow: auto; padding: 8px 28px 24px; }
+.thread-inner { max-width: 680px; margin: 0 auto; }
+.chat-foot { padding: 0 20px 16px; }
+.chat-foot .composer { max-width: 680px; margin: 0 auto; }
+@media (max-width: 900px) {
+  [data-phone-top] span { display: none; }
+  [data-phone-top] { padding: 0 8px; }
+  .topbar .course { min-width: 0; overflow: hidden; }
+  .split-main { grid-template-columns: 1fr; }
+  .seg { display: inline-flex; }
+  .split[data-show="chat"] .pane.material, .split[data-show="material"] .pane.chat { display: none; }
+  .pane.material { border-right: 0; }
+  .topbar .crumb { display: none; }
+  .pane-scroll { padding: 16px 12px 80px; }
+  .page { padding: 28px 22px; }
+  .thread { padding: 8px 16px 16px; }
+  .chat-foot { padding: 0 12px 12px; }
+}
+
+/* ================= Variant 2: Notebook ================= */
+.notebook { display: grid; grid-template-columns: 248px 1fr; height: 100%; }
+.nb-side { border-right: 1px solid var(--line); background: var(--surface); padding: 14px 10px; overflow: auto; display: grid; align-content: start; gap: 18px; }
+.nb-side h5 { margin: 0 6px 6px; font: 600 11px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.nb-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 8px; border-radius: 7px; color: var(--ink-2); cursor: pointer; font-size: 13px; }
+.nb-item small { color: var(--ink-3); margin-left: auto; font-size: 11.5px; }
+.nb-item[aria-current="true"] { background: var(--surface-2); color: var(--ink); font-weight: 500; }
+@media (hover: hover) and (pointer: fine) { .nb-item:hover { background: var(--surface-2); } }
+.nb-main { overflow: auto; position: relative; }
+.nb-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 10px 20px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.nb-head .spacer { flex: 1; }
+.doc { max-width: 700px; margin: 0 auto; padding: 24px 28px 160px; }
+.doc h1 { font: 600 30px/1.2 var(--read); margin: 8px 0 4px; letter-spacing: -.01em; }
+.doc .sub { color: var(--ink-3); font-size: 13px; margin-bottom: 28px; }
+.cell { margin: 0 0 30px; }
+.cell-q { font: 500 15px/1.5 var(--ui); color: var(--ink); display: grid; gap: 8px; padding-left: 14px; border-left: 2px solid var(--ink); margin-bottom: 14px; }
+.cell-q .who { font: 600 11px var(--ui); color: var(--ink-3); letter-spacing: .05em; text-transform: uppercase; }
+.cite { color: var(--accent); cursor: pointer; text-decoration: none; border: 0; background: none; padding: 0; font: inherit; }
+.cite:hover { text-decoration: underline; }
+.doc .answer { font-size: 16.5px; line-height: 1.7; }
+.doc .composer { margin-top: 10px; box-shadow: none; border-style: dashed; }
+.doc .composer:focus-within { border-style: solid; }
+.drawer-scrim { position: fixed; inset: 0; background: rgba(20, 18, 12, .22); z-index: 30; opacity: 0; pointer-events: none; transition: opacity 240ms ease; }
+.drawer { position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(720px, 92vw); background: var(--surface-2); box-shadow: var(--shadow-pop);
+  transform: translateX(-102%); transition: transform 320ms var(--ease-drawer); display: grid; grid-template-rows: 44px 1fr; }
+.notebook[data-drawer="open"] .drawer { transform: none; }
+.notebook[data-drawer="open"] .drawer-scrim { opacity: 1; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .drawer { transition: opacity 200ms ease; transform: none; opacity: 0; pointer-events: none; } .notebook[data-drawer="open"] .drawer { opacity: 1; pointer-events: auto; } }
+@media (max-width: 900px) {
+  .notebook { grid-template-columns: 1fr; }
+  .nb-side { display: none; }
+  .doc { padding: 12px 16px 120px; }
+  .doc h1 { font-size: 24px; }
+}
+
+/* ================= Variant 3: Margin ================= */
+.margin { display: grid; grid-template-rows: 44px 1fr; height: 100%; }
+.mg-body { display: grid; grid-template-columns: 76px minmax(0, 700px) 420px; justify-content: center; min-height: 0; overflow: auto; background: var(--surface-2); }
+.thumbs { padding: 18px 10px; display: grid; gap: 10px; align-content: start; position: sticky; top: 0; height: max-content; }
+.thumb { width: 54px; height: 70px; background: var(--paper); border-radius: 3px; box-shadow: var(--shadow); border: 2px solid transparent; position: relative; cursor: pointer; padding: 0; }
+.thumb[aria-current="true"] { border-color: var(--accent); }
+.thumb small { position: absolute; bottom: -16px; left: 0; right: 0; font-size: 10.5px; color: var(--ink-3); text-align: center; }
+.thumb .pips { position: absolute; top: 5px; right: 5px; display: flex; gap: 2px; }
+.thumb .pips i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.mg-page { padding: 28px 12px 0; }
+.mg-cards { position: relative; padding: 28px 18px 140px 4px; }
+.card {
+  position: absolute; left: 4px; right: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 12px 14px; cursor: pointer;
+  transition: transform 260ms var(--ease-out), box-shadow 200ms ease, border-color 150ms ease;
+}
+.card[data-open="true"] { cursor: default; border-color: var(--line-strong); box-shadow: var(--shadow-pop); }
+.card .c-head { display: flex; align-items: center; gap: 8px; font: 12px var(--ui); color: var(--ink-3); margin-bottom: 6px; }
+.card .n { width: 18px; height: 18px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font: 600 10.5px/18px var(--ui); text-align: center; flex: none; }
+.card .c-q { font-size: 13.5px; font-weight: 500; margin-bottom: 6px; }
+.card .c-preview { font: 14px/1.5 var(--read); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card[data-open="true"] .c-preview { display: none; }
+.card .c-full { display: none; }
+.card[data-open="true"] .c-full { display: block; }
+.card .answer { font-size: 14.5px; }
+.card .composer { margin-top: 8px; box-shadow: none; border-radius: 10px; }
+.cmdbar { position: sticky; bottom: 20px; max-width: 640px; margin: 20px auto 0; z-index: 20; }
+.cmdbar .composer { box-shadow: var(--shadow-pop); }
+@media (max-width: 1100px) {
+  .mg-body { grid-template-columns: minmax(0, 1fr); }
+  .thumbs { display: none; }
+  .mg-cards { position: static; padding: 0 12px 160px; display: grid; gap: 12px; }
+  .card { position: static; }
+  .mg-page { padding: 16px 12px 20px; }
+  .page { padding: 28px 22px; }
+}
+
+/* ---------- picker (verbatim spec) ---------- */
+.proto-picker { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 2147483647; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: rgba(10, 10, 10, 0.82); -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset, 0 8px 24px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.12); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; line-height: 1; -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
+.proto-picker-highlight { position: absolute; top: 4px; left: 0; height: 28px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); }
+.proto-picker[data-ready] .proto-picker-highlight { transition: transform 250ms cubic-bezier(0.23, 1, 0.32, 1), width 250ms cubic-bezier(0.23, 1, 0.32, 1); }
+@media (prefers-reduced-motion: reduce) { .proto-picker[data-ready] .proto-picker-highlight { transition: none; } }
+.proto-picker-item { position: relative; display: flex; align-items: center; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.55); font: inherit; cursor: pointer; transition: color 150ms ease-out, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+@media (hover: hover) and (pointer: fine) { .proto-picker-item:hover { color: rgba(255, 255, 255, 0.85); } }
+.proto-picker-item:active { transform: scale(0.97); }
+.proto-picker-item:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.4); outline-offset: 2px; }
+.proto-picker-item[data-active] { color: #fff; }
+.proto-picker-divider { width: 1px; height: 16px; margin: 0 4px; background: rgba(255, 255, 255, 0.12); }
+.proto-picker-replay { padding: 0 10px; font-size: 14px; }
+.proto-picker[data-position="top"] { bottom: auto; top: 24px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<nav class="proto-picker" aria-label="Prototype variants" data-position="top">
+  <span class="proto-picker-highlight" aria-hidden="true"></span>
+  <button class="proto-picker-item" data-active aria-current="true">Split</button>
+  <button class="proto-picker-item">Notebook</button>
+  <button class="proto-picker-item">Margin</button>
+  <span class="proto-picker-divider" aria-hidden="true"></span>
+  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+</nav>
+
+<script>
+/* ================= content ================= */
+const tex = (s, display = false) => katex.renderToString(s, { throwOnError: false, displayMode: display });
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/* Math followed by punctuation is glued with nowrap, so "B." never breaks into "B" / ".". */
+const mathTok = (t, punct = '') => punct ? `<span style="white-space:nowrap">${tex(t)}${esc(punct)}</span>` : tex(t);
+function inline(s) {
+  return s.split(/(\$[^$]+\$[.,;:!?)]*)/).map((p) => {
+    const m = p.match(/^\$([^$]+)\$([.,;:!?)]*)$/);
+    if (m) return mathTok(m[1], m[2]);
+    return esc(p).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
+  }).join('');
+}
+
+const FILE = 'Apunte 3 — Deducción natural.pdf';
+const QUOTE = { file: FILE, page: 12, text: 'Si a partir de la hipótesis $A$ se deriva $B$, se concluye $A\\to B$ y la hipótesis queda descartada.' };
+
+const PROOF = {
+  f: '(p\\to q)\\to(\\neg q\\to\\neg p)', rule: '{\\to}I^{1}', premises: [{
+    f: '\\neg q\\to\\neg p', rule: '{\\to}I^{2}', premises: [{
+      f: '\\neg p', rule: '\\neg I^{3}', premises: [{
+        f: '\\bot', rule: '\\neg E', premises: [
+          { f: '[\\neg q]^{2}' },
+          { f: 'q', rule: '{\\to}E', premises: [{ f: '[p\\to q]^{1}' }, { f: '[p]^{3}' }] },
+        ],
+      }],
+    }],
+  }],
+};
+
+const TURNS = [
+  { role: 'user', text: 'Dibujá el AFD que acepta las cadenas sobre $\\{0,1\\}$ con cantidad par de 0s.' },
+  { role: 'asst', mode: 'Explicar', segs: [
+    { t: 'md', s: 'Alcanzan dos estados: $q_0$ («llevo una cantidad par de 0s») y $q_1$ («impar»). Cada $0$ alterna entre ellos; cada $1$ deja el estado igual.' },
+    { t: 'dfa' },
+    { t: 'md', s: 'Formalmente, $M=(\\{q_0,q_1\\},\\{0,1\\},\\delta,q_0,\\{q_0\\})$ con $\\delta(q_i,0)=q_{1-i}$ y $\\delta(q_i,1)=q_i$.' },
+  ] },
+  { role: 'user', quote: QUOTE, text: '¿Por qué se puede descartar la hipótesis? Mostrame un ejemplo completo.' },
+  { role: 'asst', mode: 'Explicar', segs: [
+    { t: 'md', s: 'La hipótesis $A$ se usa *solo* para mostrar que, **si** valiera $A$, valdría $B$. Una vez obtenido $A\\to B$, la conclusión ya no depende de $A$: lo que afirmamos es la implicación, no $A$.' },
+    { t: 'md', s: 'Ejemplo: la contrarrecíproca es un teorema.' },
+    { t: 'math', s: '\\vdash (p\\to q)\\to(\\neg q\\to\\neg p)' },
+    { t: 'proof', tree: PROOF },
+    { t: 'md', s: 'Cada índice marca dónde se abre una hipótesis y qué regla la descarta: $1$ y $2$ con ${\\to}I$, $3$ con $\\neg I$. Al final no queda ninguna abierta.' },
+  ] },
+  { role: 'user', photo: true, text: 'Hice el ejercicio 3 así, ¿está bien?' },
+  { role: 'asst', mode: 'Revisar', stream: true, segs: [
+    { t: 'md', s: 'La estructura está bien: abrís las hipótesis $1$ y $2$ y las descartás en orden inverso con ${\\to}I$.' },
+    { t: 'md', s: 'El problema está en la **línea 3**: *Modus Tollens* no es una regla primitiva del sistema del apunte (§3.2), así que no podés usarla sin derivarla antes.' },
+    { t: 'md', s: '¿Qué podrías suponer entre las líneas 2 y 3 para llegar a $\\neg p$ usando solo $\\neg I$? Pista: buscá una contradicción con lo que ya tenés.' },
+    { t: 'math', s: '\\dfrac{\\;[p]^{3}\\quad\\cdots\\quad\\bot\\;}{\\neg p}\\;\\neg I^{3}' },
+    { t: 'md', s: 'Completá los puntos y mandame otra foto.' },
+  ] },
+];
+
+const PHOTO_LINES = [
+  ['1.', 'p → q', 'hip'], ['2.', '¬q', 'hip'], ['3.', '¬p', 'MT 1,2'], ['4.', '¬q → ¬p', '→I 2–3'], ['5.', '(p→q)→(¬q→¬p)', '→I 1–4'],
+];
+
+/* ================= renderers ================= */
+const I = {
+  phone: '<svg class="i" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
+  send: '<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  stop: '<svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
+  x: '<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  book: '<svg class="i" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></svg>',
+  chev: '<svg class="i" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+  copy: '<svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  cam: '<svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+};
+
+function proofHTML(n) {
+  if (!n.premises) return `<span class="pt-leaf">${tex(n.f)}</span>`;
+  return `<div class="pt"><div class="pt-prem">${n.premises.map(proofHTML).join('')}</div><div class="pt-bar"><span class="pt-rule">${tex(n.rule)}</span></div><div class="pt-concl">${tex(n.f)}</div></div>`;
+}
+const DFA = `<svg class="dfa" viewBox="0 0 380 160" role="img" aria-label="AFD con estados q0 y q1">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.4">
+    <path d="M40 95H86" marker-end="url(#ah)"/>
+    <circle cx="112" cy="95" r="25"/><circle cx="112" cy="95" r="20"/>
+    <circle cx="268" cy="95" r="25"/>
+    <path d="M134 82Q190 48 246 82" marker-end="url(#ah)"/>
+    <path d="M246 108Q190 142 134 108" marker-end="url(#ah)"/>
+    <path d="M101 72C88 30 136 30 123 72" marker-end="url(#ah)"/>
+    <path d="M257 72C244 30 292 30 279 72" marker-end="url(#ah)"/>
+  </g>
+  <text x="103" y="100">q<tspan dy="4" font-size="11">0</tspan></text>
+  <text x="259" y="100">q<tspan dy="4" font-size="11">1</tspan></text>
+  <text class="lbl" x="186" y="56">0</text><text class="lbl" x="186" y="143">0</text>
+  <text class="lbl" x="108" y="30">1</text><text class="lbl" x="264" y="30">1</text>
+</svg>`;
+
+function blockHead(kind, src) {
+  return `<div class="block-head"><span>${kind}</span><button class="icon-btn" title="Copiar ${src}" aria-label="Copiar ${src}">${I.copy}</button></div>`;
+}
+function segHTML(seg) {
+  switch (seg.t) {
+    case 'md': return `<p>${inline(seg.s)}</p>`;
+    case 'math': return `<div class="display">${tex(seg.s, true)}</div>`;
+    case 'proof': return `<div class="block">${blockHead('Deducción natural', 'como JSON')}<div class="block-body"><div class="pt-wrap">${proofHTML(seg.tree)}</div></div></div>`;
+    case 'dfa': return `<div class="block">${blockHead('Autómata · dot', 'DOT')}<div class="block-body">${DFA}</div></div>`;
+  }
+}
+function photoHTML() {
+  return `<div><div class="photo" role="img" aria-label="Foto de una demostración escrita a mano">${PHOTO_LINES.map((l) => `<div class="ln"><span>${l[0]}</span><span>${l[1]}</span><span>${l[2]}</span></div>`).join('')}</div>
+    <div class="photo-meta">${I.phone} Desde el iPhone · recién</div></div>`;
+}
+function quoteHTML(q, citeable) {
+  const src = citeable ? `<button class="cite src" data-cite="${q.page}">${esc(q.file.replace('.pdf', ''))}, p. ${q.page} ↗</button>` : `<span class="src">${esc(q.file.replace('.pdf', ''))}, p. ${q.page}</span>`;
+  return `<div class="quote">${src}${inline(q.text)}</div>`;
+}
+
+/* Streaming: words append one by one; inline math and blocks arrive whole. */
+function streamInto(el, segs, { onDone, speed = 22 } = {}) {
+  let si = 0, ti = 0, timer = null, stopped = false;
+  const caret = '<span class="caret" aria-hidden="true"></span>';
+  let cur = null, tokens = [];
+  function step() {
+    if (stopped) return;
+    if (si >= segs.length) { el.querySelector('.caret')?.remove(); onDone?.(false); return; }
+    const seg = segs[si];
+    if (seg.t !== 'md') {
+      el.querySelector('.caret')?.remove();
+      el.insertAdjacentHTML('beforeend', segHTML(seg));
+      el.lastElementChild.classList.add('seg-in');
+      si++; timer = setTimeout(step, 320); return;
+    }
+    if (!cur) {
+      el.querySelector('.caret')?.remove();
+      cur = document.createElement('p'); el.appendChild(cur);
+      tokens = seg.s.split(/(\$[^$]+\$[.,;:!?)]*|\s+)/).filter(Boolean); ti = 0;
+    }
+    ti += 1;
+    cur.innerHTML = inline(tokens.slice(0, ti).join('')) + caret;
+    if (ti >= tokens.length) { cur = null; si++; timer = setTimeout(step, 180); }
+    else timer = setTimeout(step, /\$/.test(tokens[ti - 1]) ? speed * 3 : speed);
+  }
+  timer = setTimeout(step, 450);
+  return {
+    stop() {
+      if (stopped) return; stopped = true; clearTimeout(timer);
+      el.querySelector('.caret')?.remove();
+      el.insertAdjacentHTML('beforeend', '<p class="interrupted">(interrumpido)</p>');
+      onDone?.(true);
+    },
+  };
+}
+
+function composerHTML({ placeholder = 'Preguntá, pegá un enunciado o pedí ejercicios…', modes = true, compact = false } = {}) {
+  const ms = ['Leer', 'Explicar', 'Revisar', 'Examen'];
+  return `<div class="composer" data-composer>
+    <div class="attached" data-attached></div>
+    <textarea rows="1" placeholder="${placeholder}" aria-label="Mensaje"></textarea>
+    <div class="row">
+      ${modes ? `<div class="modes" role="group" aria-label="Modo de estudio">${ms.map((m) => `<button class="chip" aria-pressed="${m === 'Revisar'}" data-mode="${m}">${m}</button>`).join('')}</div>` : ''}
+      <span class="spacer"></span>
+      ${compact ? '' : `<button class="icon-btn" data-phone title="Foto desde el teléfono" aria-label="Foto desde el teléfono">${I.cam}</button>`}
+      <button class="btn primary" data-send aria-label="Enviar">${I.send}</button>
+    </div>
+  </div>`;
+}
+
+function pageHTML() {
+  return `<article class="page" data-page>
+    <div class="runner"><span>Introducción a la Lógica y la Computación</span><span>Apunte 3 · Deducción natural</span></div>
+    <h2>3.2 Reglas para el condicional</h2>
+    <p>Las reglas de introducción y eliminación del condicional capturan su lectura constructiva: una prueba de $A\\to B$ es un método que transforma pruebas de $A$ en pruebas de $B$.</p>
+    <p><strong>Introducción del condicional.</strong> <mark class="hl" data-anchor="1" data-n="2">Si a partir de la hipótesis $A$ se deriva $B$, se concluye $A\\to B$ y la hipótesis queda descartada.</mark> La hipótesis se marca entre corchetes con un índice que la vincula a la regla que la descarta.</p>
+    <div class="rule">${tex('\\dfrac{\\begin{matrix}[A]^{i}\\\\ \\vdots\\\\ B\\end{matrix}}{A\\to B}\\;{\\to}I^{i}', true)}</div>
+    <p><strong>Eliminación del condicional</strong> (<em>modus ponens</em>). De $A\\to B$ y $A$ se concluye $B$.</p>
+    <div class="rule">${tex('\\dfrac{A\\to B\\qquad A}{B}\\;{\\to}E', true)}</div>
+    <p>Las reglas derivadas, como <em>modus tollens</em>, sólo pueden usarse después de haber sido demostradas a partir de las primitivas (ver §3.5).</p>
+    <p class="exercise"><mark class="hl" data-anchor="2" data-n="3"><strong>Ejercicio 3.</strong> Demostrar $\\vdash (p\\to q)\\to(\\neg q\\to\\neg p)$</mark> usando sólo las reglas primitivas.</p>
+    <div class="folio">12</div>
+  </article>`.replace(/\$([^$]+)\$([.,;:!?)]*)/g, (_, t, p) => mathTok(t, p));
+}
+
+function threadHTML() {
+  return TURNS.map((t, i) => {
+    if (t.role === 'user') {
+      return `<div class="turn-user">${t.quote ? quoteHTML(t.quote) : ''}${t.photo ? photoHTML() : ''}<div class="bubble">${inline(t.text)}</div></div>`;
+    }
+    return `<div class="turn-asst"><div class="meta"><span>Claude</span><span class="mode">${t.mode}</span></div><div class="answer" data-turn="${i}">${t.stream ? '' : t.segs.map(segHTML).join('')}</div></div>`;
+  }).join('');
+}
+
+/* ================= shared behaviour ================= */
+let cleanups = [];
+function onCleanup(fn) { cleanups.push(fn); }
+function runCleanups() { cleanups.forEach((f) => f()); cleanups = []; document.querySelectorAll('.pop, .ask-float').forEach((n) => n.remove()); }
+
+function qrSVG() {
+  let s = 7; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const N = 25; let r = '';
+  const finder = (x, y) => `<rect x="${x}" y="${y}" width="7" height="7"/><rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#fff"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3"/>`;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const inF = (x < 8 && y < 8) || (x > N - 9 && y < 8) || (x < 8 && y > N - 9);
+    if (!inF && rnd() > .52) r += `<rect x="${x}" y="${y}" width="1" height="1"/>`;
+  }
+  return `<svg class="qr" viewBox="0 0 ${N} ${N}" shape-rendering="crispEdges" fill="#111">${r}${finder(0, 0)}${finder(N - 7, 0)}${finder(0, N - 7)}</svg>`;
+}
+function openPhonePop(btn) {
+  const existing = document.querySelector('.pop'); if (existing) { existing.remove(); return; }
+  const r = btn.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Conectar teléfono');
+  pop.innerHTML = `<h4>Mandá fotos desde el teléfono</h4><p>Escaneá con la cámara. El código vence en 5 min.</p>${qrSVG()}
+    <div class="dev"><span class="dot"></span>iPhone conectado · las fotos llegan a esta sesión</div>`;
+  document.body.appendChild(pop);
+  const w = 260, h = pop.offsetHeight;
+  const above = r.top - h - 8 > 8;
+  const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w));
+  pop.style.left = left + 'px';
+  pop.style.top = (above ? r.top - h - 8 : r.bottom + 8) + 'px';
+  pop.style.transformOrigin = `${r.left + r.width / 2 - left}px ${above ? '100%' : '0%'}`;
+  const close = (e) => { if (!pop.contains(e.target) && e.target !== btn && !btn.contains(e.target)) { pop.remove(); document.removeEventListener('pointerdown', close); } };
+  const esc = (e) => { if (e.key === 'Escape') { pop.remove(); document.removeEventListener('keydown', esc); } };
+  setTimeout(() => document.addEventListener('pointerdown', close));
+  document.addEventListener('keydown', esc);
+  onCleanup(() => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', esc); });
+}
+
+/* Wires a composer: modes, autosize, send/stop, quote attach, phone. */
+function wireComposer(root, { onSend, getStreaming, stop }) {
+  const c = root.querySelector('[data-composer]'); if (!c) return {};
+  const ta = c.querySelector('textarea'), send = c.querySelector('[data-send]'), att = c.querySelector('[data-attached]');
+  let quote = null;
+  c.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+    c.querySelectorAll('[data-mode]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+  }));
+  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send.click(); } });
+  c.querySelector('[data-phone]')?.addEventListener('click', (e) => openPhonePop(e.currentTarget));
+  send.addEventListener('click', () => {
+    if (getStreaming()) { stop(); return; }
+    const text = ta.value.trim(); if (!text && !quote) return;
+    onSend({ text: text || 'Explicame esto.', quote });
+    ta.value = ''; ta.style.height = 'auto'; quote = null; att.innerHTML = '';
+  });
+  return {
+    setStreaming(on) {
+      send.className = on ? 'btn stop' : 'btn primary';
+      send.innerHTML = on ? I.stop : I.send;
+      send.setAttribute('aria-label', on ? 'Detener' : 'Enviar');
+    },
+    attachQuote(text) {
+      quote = { file: FILE, page: 12, text };
+      att.innerHTML = `<div class="quote"><span class="src">${esc(FILE.replace('.pdf', ''))}, p. 12</span>${esc(text)}<button class="icon-btn x" aria-label="Quitar cita">${I.x}</button></div>`;
+      att.querySelector('.x').addEventListener('click', () => { quote = null; att.innerHTML = ''; });
+      ta.focus();
+    },
+  };
+}
+
+/* Floating "Preguntar" on text selection inside the page. */
+function wireSelection(scope, onAsk) {
+  let btn = null;
+  const clear = () => { btn?.remove(); btn = null; };
+  const handler = () => setTimeout(() => {
+    const sel = window.getSelection();
+    const text = sel?.toString().trim();
+    clear();
+    if (!text || !sel.rangeCount) return;
+    const page = scope.querySelector('[data-page]');
+    if (!page || !page.contains(sel.anchorNode)) return;
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    btn = document.createElement('button');
+    btn.className = 'btn primary ask-float';
+    btn.textContent = 'Preguntar sobre esto';
+    document.body.appendChild(btn);
+    btn.style.left = Math.max(8, r.left + r.width / 2 - btn.offsetWidth / 2) + 'px';
+    btn.style.top = Math.max(8, r.top - 40) + 'px';
+    btn.addEventListener('pointerdown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => { onAsk(text); sel.removeAllRanges(); clear(); });
+  });
+  scope.addEventListener('mouseup', handler);
+  const onScroll = () => clear();
+  scope.addEventListener('scroll', onScroll, true);
+  onCleanup(() => { clear(); scope.removeEventListener('mouseup', handler); });
+}
+
+/* Runs the streamed turn + new sends for a thread container. */
+function wireThread(root, threadEl, scroller, { userHTML = defaultUser, asstHTML = defaultAsst } = {}) {
+  let active = null;
+  const ui = wireComposer(root, {
+    getStreaming: () => !!active,
+    stop: () => active?.stop(),
+    onSend: ({ text, quote }) => {
+      threadEl.insertAdjacentHTML('beforeend', userHTML({ text, quote }));
+      const wrap = document.createElement('div'); wrap.innerHTML = asstHTML(); const node = wrap.firstElementChild;
+      threadEl.appendChild(node);
+      start(node.querySelector('.answer'), [
+        { t: 'md', s: 'Esto es un prototipo: acá respondería Claude, con la matemática renderizada a medida que llega, por ejemplo $\\sum_{k=0}^{n}\\binom{n}{k}=2^n$.' },
+      ]);
+    },
+  });
+  function start(el, segs) {
+    ui.setStreaming?.(true);
+    const follow = () => { scroller.scrollTop = scroller.scrollHeight; };
+    const mo = new MutationObserver(follow); mo.observe(el, { childList: true, subtree: true });
+    follow();
+    active = streamInto(el, segs, { onDone: () => { mo.disconnect(); active = null; ui.setStreaming?.(false); } });
+  }
+  onCleanup(() => active?.stop());
+  const streamed = threadEl.querySelector(`[data-turn="${TURNS.findIndex((t) => t.stream)}"]`);
+  if (streamed) start(streamed, TURNS.find((t) => t.stream).segs);
+  return ui;
+}
+const defaultUser = ({ text, quote }) => `<div class="turn-user">${quote ? quoteHTML(quote) : ''}<div class="bubble">${inline(text)}</div></div>`;
+const defaultAsst = () => `<div class="turn-asst"><div class="meta"><span>Claude</span><span class="mode">Revisar</span></div><div class="answer"></div></div>`;
+
+/* ================= Variant 1: Split ================= */
+const split = {
+  html: () => `<div class="app split" data-show="chat">
+    <header class="topbar">
+      <span class="course">${I.book} Lógica y Computación ${I.chev}</span>
+      <span class="crumb">/ Deducción natural — repaso para el parcial</span>
+      <span class="spacer"></span>
+      <div class="seg" role="group" aria-label="Vista"><button aria-pressed="false" data-show="material">Material</button><button aria-pressed="true" data-show="chat">Chat</button></div>
+      <button class="btn" data-phone-top>${I.phone}<span>Teléfono</span></button>
+    </header>
+    <main class="split-main">
+      <section class="pane material" aria-label="Material">
+        <div class="pane-bar"><span class="file">${FILE}</span><span class="spacer" style="flex:1"></span><span>12 / 34</span></div>
+        <div class="pane-scroll">${pageHTML()}</div>
+      </section>
+      <section class="pane chat" aria-label="Chat">
+        <div class="thread"><div class="thread-inner">${threadHTML()}</div></div>
+        <div class="chat-foot">${composerHTML()}</div>
+      </section>
+    </main>
+  </div>`,
+  init(root) {
+    const app = root.querySelector('.split');
+    const ui = wireThread(root, root.querySelector('.thread-inner'), root.querySelector('.thread'));
+    root.querySelector('[data-phone-top]').addEventListener('click', (e) => openPhonePop(e.currentTarget));
+    root.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+      app.dataset.show = b.dataset.show;
+      root.querySelectorAll('.seg button').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    }));
+    wireSelection(root.querySelector('.pane.material'), (text) => {
+      ui.attachQuote(text);
+      if (getComputedStyle(root.querySelector('.seg')).display !== 'none') root.querySelector('.seg [data-show="chat"]').click();
+    });
+  },
+};
+
+/* ================= Variant 2: Notebook ================= */
+const notebook = {
+  html: () => `<div class="app notebook">
+    <aside class="nb-side">
+      <div>
+        <h5>Materias</h5>
+        <button class="nb-item" aria-current="true">${I.book} Lógica y Computación</button>
+        <button class="nb-item">${I.book} Probabilidad y Estadística</button>
+      </div>
+      <div>
+        <h5>Sesiones</h5>
+        <button class="nb-item" aria-current="true">Deducción natural — repaso <small>hoy</small></button>
+        <button class="nb-item">Autómatas finitos <small>jue</small></button>
+        <button class="nb-item">Simulacro parcial 1 <small>lun</small></button>
+      </div>
+      <div>
+        <h5>Material</h5>
+        <button class="nb-item" data-open-drawer>Apunte 3 — Deducción natural</button>
+        <button class="nb-item">Práctica 2.pdf</button>
+        <button class="nb-item">notas/condicional.md</button>
+      </div>
+    </aside>
+    <div class="nb-main">
+      <div class="nb-head"><button class="btn" data-open-drawer>${I.book}<span>Material</span></button><span class="spacer"></span><button class="btn" data-phone-top>${I.phone}<span>Teléfono</span></button></div>
+      <div class="doc">
+        <h1>Deducción natural — repaso</h1>
+        <div class="sub">Lógica y Computación · hoy · se guarda en <code>logica/sesiones/2026-11-22-deduccion-natural.md</code></div>
+        <div data-doc>${docHTML()}</div>
+        ${composerHTML({ placeholder: 'Seguí escribiendo… (Enter para preguntar)' })}
+      </div>
+    </div>
+    <div class="drawer-scrim" data-close-drawer></div>
+    <aside class="drawer" aria-label="Material" aria-hidden="true">
+      <div class="pane-bar"><span class="file">${FILE} · p. 12</span><span style="flex:1"></span><button class="icon-btn" data-close-drawer aria-label="Cerrar">${I.x}</button></div>
+      <div class="pane-scroll">${pageHTML()}</div>
+    </aside>
+  </div>`,
+  init(root) {
+    const app = root.querySelector('.notebook');
+    const drawer = root.querySelector('.drawer');
+    const open = () => { app.dataset.drawer = 'open'; drawer.setAttribute('aria-hidden', 'false'); };
+    const close = () => { app.dataset.drawer = ''; drawer.setAttribute('aria-hidden', 'true'); };
+    root.querySelectorAll('[data-open-drawer], .cite').forEach((b) => b.addEventListener('click', open));
+    root.querySelectorAll('[data-close-drawer]').forEach((b) => b.addEventListener('click', close));
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey); onCleanup(() => document.removeEventListener('keydown', onKey));
+    root.querySelector('[data-phone-top]').addEventListener('click', (e) => openPhonePop(e.currentTarget));
+    const ui = wireThread(root, root.querySelector('[data-doc]'), root.querySelector('.nb-main'), {
+      userHTML: ({ text, quote }) => `<section class="cell"><div class="cell-q"><span class="who">Vos</span>${quote ? quoteHTML(quote, true) : ''}<span>${inline(text)}</span></div></section>`,
+      asstHTML: () => `<section class="cell"><div class="answer"></div></section>`,
+    });
+    wireSelection(drawer, (text) => { ui.attachQuote(text); close(); });
+  },
+};
+function docHTML() {
+  let out = '';
+  for (let i = 0; i < TURNS.length; i++) {
+    const t = TURNS[i];
+    if (t.role === 'user') {
+      out += `<section class="cell"><div class="cell-q"><span class="who">Vos</span>${t.quote ? quoteHTML(t.quote, true) : ''}${t.photo ? photoHTML() : ''}<span>${inline(t.text)}</span></div>`;
+    } else {
+      out += `<div class="answer" data-turn="${i}">${t.stream ? '' : t.segs.map(segHTML).join('')}</div></section>`;
+    }
+  }
+  return out;
+}
+
+/* ================= Variant 3: Margin ================= */
+const margin = {
+  html: () => `<div class="app margin">
+    <header class="topbar">
+      <span class="course">${I.book} Lógica y Computación ${I.chev}</span>
+      <span class="crumb">/ ${FILE}</span>
+      <span class="spacer"></span>
+      <button class="btn" data-phone-top>${I.phone}<span>Teléfono</span></button>
+    </header>
+    <div class="mg-body">
+      <nav class="thumbs" aria-label="Páginas">
+        ${[10, 11, 12, 13, 14].map((p) => `<button class="thumb" ${p === 12 ? 'aria-current="true"' : ''} aria-label="Página ${p}">${p === 12 ? '<span class="pips"><i></i><i></i></span>' : p === 11 ? '<span class="pips"><i></i></span>' : ''}<small>${p}</small></button>`).join('')}
+      </nav>
+      <div class="mg-page">${pageHTML()}<div class="cmdbar">${composerHTML({ placeholder: 'Seleccioná texto en la página o preguntá sobre ella…' })}</div></div>
+      <div class="mg-cards" data-cards>
+        <article class="card" data-for="1" data-open="false">
+          <div class="c-head"><span class="n">2</span><span>Explicar · hace 4 min</span></div>
+          <div class="c-q">¿Por qué se puede descartar la hipótesis?</div>
+          <div class="c-preview">${inline(TURNS[3].segs[0].s)}</div>
+          <div class="c-full"><div class="answer">${TURNS[3].segs.map(segHTML).join('')}</div></div>
+        </article>
+        <article class="card" data-for="2" data-open="true">
+          <div class="c-head"><span class="n">3</span><span>Revisar · ahora</span></div>
+          <div class="c-q">Hice el ejercicio 3 así, ¿está bien?</div>
+          <div class="c-preview">La estructura está bien…</div>
+          <div class="c-full">${photoHTML()}<div style="height:10px"></div><div class="answer" data-turn="${TURNS.findIndex((t) => t.stream)}"></div>${composerHTML({ placeholder: 'Responder en este hilo…', modes: false, compact: true })}</div>
+        </article>
+      </div>
+    </div>
+  </div>`,
+  init(root) {
+    const body = root.querySelector('.mg-body');
+    const cardsEl = root.querySelector('[data-cards]');
+    const cards = [...root.querySelectorAll('.card')];
+    const layout = () => {
+      if (getComputedStyle(cardsEl).position === 'static') { cards.forEach((c) => (c.style.transform = '')); return; }
+      const base = cardsEl.getBoundingClientRect().top;
+      let floor = 0;
+      cards.forEach((c) => {
+        const a = root.querySelector(`[data-anchor="${c.dataset.for}"]`);
+        const want = a.getBoundingClientRect().top - base - 14;
+        const y = Math.max(want, floor);
+        c.style.transform = `translateY(${y}px)`;
+        floor = y + c.offsetHeight + 12;
+      });
+      cardsEl.style.minHeight = floor + 140 + 'px';
+    };
+    cards.forEach((c) => c.addEventListener('click', (e) => {
+      if (c.dataset.open === 'true') return;
+      cards.forEach((o) => (o.dataset.open = String(o === c)));
+      layout();
+    }));
+    // The thread inside the open card streams; the command bar opens a new card in the real app.
+    const threadCard = cards[1];
+    const ui = wireThread(threadCard, threadCard.querySelector('.c-full'), body, {
+      userHTML: defaultUser,
+      asstHTML: () => `<div class="turn-asst"><div class="answer"></div></div>`,
+    });
+    const ro = new ResizeObserver(layout); cards.forEach((c) => ro.observe(c)); ro.observe(body);
+    onCleanup(() => ro.disconnect());
+    requestAnimationFrame(layout);
+    const cmd = root.querySelector('.cmdbar');
+    const cmdUi = wireComposer(cmd, { getStreaming: () => false, stop() {}, onSend: () => {} });
+    root.querySelector('[data-phone-top]').addEventListener('click', (e) => openPhonePop(e.currentTarget));
+    wireSelection(root.querySelector('.mg-page'), (text) => cmdUi.attachQuote(text));
+  },
+};
+
+/* ================= picker wiring (per PICKER.md) ================= */
+const variants = [split, notebook, margin];
+const stage = document.getElementById('stage');
+const picker = document.querySelector('.proto-picker');
+const highlight = picker.querySelector('.proto-picker-highlight');
+const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
+const replay = picker.querySelector('.proto-picker-replay');
+let current = 0;
+
+function moveHighlight() {
+  const el = items[current];
+  highlight.style.width = el.offsetWidth + 'px';
+  highlight.style.transform = `translateX(${el.offsetLeft}px)`;
+}
+function mount(i) {
+  runCleanups();
+  stage.innerHTML = '';
+  requestAnimationFrame(() => { stage.innerHTML = variants[i].html(); variants[i].init(stage); });
+}
+function setActive(i) {
+  if (i < 0 || i >= variants.length) return;
+  current = i;
+  items.forEach((el, j) => {
+    el.toggleAttribute('data-active', j === i);
+    if (j === i) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
+  });
+  moveHighlight();
+  const url = new URL(location);
+  url.searchParams.set('v', i + 1);
+  history.replaceState(null, '', url);
+  mount(i);
+}
+items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+replay?.addEventListener('click', () => mount(current));
+window.addEventListener('resize', moveHighlight);
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const num = parseInt(e.key, 10);
+  if (num >= 1 && num <= variants.length) setActive(num - 1);
+  else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
+  else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
+  else if (e.key === 'r' || e.key === 'R') mount(current);
+});
+const requested = parseInt(new URLSearchParams(location.search).get('v'), 10);
+setActive(requested >= 1 && requested <= variants.length ? requested - 1 : 0);
+requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+</script>
+</body>
+</html>
