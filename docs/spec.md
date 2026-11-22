@@ -30,7 +30,7 @@ It worked when the user can do these in one sitting with no terminal or editor o
 There is no code yet, and this is a new open-source repository (MIT). Things to borrow from:
 - **Claudian** (MIT, an Obsidian plugin that runs Claude Code over a Markdown folder) is a reference for driving the agent over a notes folder. The user doesn't use Obsidian, so it is not a base to build on.
 - **Opcode** (formerly Claudia, Tauri 2 GUI for Claude Code) is the reference for sidecar and session handling if we wrap the app in Tauri later. Verify its license before copying any code.
-- **assistant-ui's LaTeX guide** is the source of `normalizeMathDelimiters` and `escapeCurrencyDollars`, the delimiter fixes for model output.
+- **assistant-ui's LaTeX guide** is the source of the delimiter and currency heuristics in `shared/normalize-math.ts` (rewritten in about 180 lines; their scanner is 2,100 lines because it also tracks HTML blocks and indented code, which our answers do not use).
 
 ## Design
 
@@ -75,11 +75,11 @@ study/
 
 **Rendering pipeline (the core of the app).**
 - **Math.** `react-markdown` + `remark-math` + `rehype-katex` (KaTeX 0.19.x), with a normalizer run on each streamed chunk first. The normalizer converts `\(…\)` / `\[…\]` to dollars and escapes currency dollars.
-- **Half-received math.** It stays as raw text until the closing delimiter arrives, with no error flash.
+- **Half-received math.** It stays as raw text until the closing delimiter arrives, with no error flash. An unclosed inline `$x` is already text to remark-math; an unclosed display formula (`$$`, `\[`, `\(`) shows its source in a dashed `math-pending` block. The same holds after the stream stops, so an answer interrupted mid-formula never shows a KaTeX error.
 - **Alternatives.** Vercel `streamdown` (with its math plugin) is the runner-up and is worth a spike if streaming jank shows up. Temml (MathML) is the fallback if KaTeX misses a construct the courses need.
 - **Rejected: MathJax 4.** It has the widest coverage, but its typesetting is asynchronous and slower, which suits re-rendering on every chunk badly.
 - **Copy.** The KaTeX `copy-tex` extension, so copying an equation yields its LaTeX.
-- **Punctuation after math.** Glue it to the math with `white-space: nowrap`, so `$B$.` never wraps the period onto its own line. The prototype hit this.
+- **Punctuation after math.** Glue it to the math with `white-space: nowrap`, so `$B$.` never wraps the period onto its own line. The prototype hit this. A rehype plugin (`client/markdown/glue.ts`) wraps inline math and touching punctuation, opening or closing, in `span.math-glue`.
 - **Prototype.** `prototype/workspace.html` has the three explored layouts (Split, Notebook, Margin). Decided: they become two views of one session, Read (Margin plus an openable chat panel, which is Split) and Practice (Notebook). See `architecture.md` → Views.
 - **Fenced blocks Claude may emit.** Each block kind has one renderer. All of them are declarative data, and none of them runs code Claude wrote.
 

@@ -35,8 +35,8 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 | `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
 | `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({sessionId, resume?}) → {push, interrupt, close, events}`; step 3 adds `seed?` |
 | `tools/calc` | in-process MCP server (`createSdkMcpServer`, `tool()`), mathjs + distributions in a Worker | `calc(expr) → value \| error` |
-| `shared` | zod protocol schemas, the event reducer, `normalizeMath` | imported by server and client, so both reduce events identically |
-| `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store | — |
+| `shared` | zod protocol schemas, the event reducer, `normalize-math` (`\(…\)`/`\[…\]` to dollars and escaping currency, after assistant-ui's heuristics, outside code; plus holding an unclosed display formula as raw source) | imported by server and client, so both reduce events identically |
+| `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store (`client/store.ts`); the thread view and composer in `client/thread/`; Markdown + KaTeX in `client/markdown/` | — |
 
 Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake is what makes every integration and Playwright test run offline.
 
@@ -168,13 +168,13 @@ study/
 - **Tests.**
   - `bun test`: the reducer, `normalizeMath`, the transcript round trip, `calc` (known values; `import`, `eval` and loops rejected), the path jail (symlink escapes), and auth.
   - Integration with the fake driver: two clients receive identical events, a client joining mid-stream gets the snapshot plus the tail, an epoch change after restart, the reseed when the hash differs, and a 403 after a device is revoked.
-  - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context.
+  - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context. It runs the server with `LEMMA_FAKE=1`, which swaps in `FakeDriver`: messages replay `math-rich.jsonl` unless they end in a `<!--fixture:<name>-->` paragraph, and `LEMMA_FAKE_DELAY_MS` paces each SDK message. The same mode serves for trying the UI offline.
   - One live smoke test, only under `LIVE=1`.
 - **SDK shapes, confirmed in step 1** (SDK 0.3.330, recorded in `test/fixtures/streams/`, documented in `src/server/agent/map.ts`):
   - `stream_event` is `{event, parent_tool_use_id, uuid, session_id, ttft_ms?}`, where `event` is a raw Messages API stream event. Block indices restart at 0 in every API message.
   - Tool results come back as `user` messages with `tool_result` content blocks.
   - Each turn ends with exactly one `result`. A normal turn has `subtype: success`, `terminal_reason: completed`. After `Query.interrupt()` it has `subtype: error_during_execution`, `is_error: true`, `terminal_reason: aborted_streaming`. `usage` is per turn, but `total_cost_usd` is cumulative over the `query()`, so we don't report cost per turn.
-  - Thinking blocks stream with empty text unless a thinking display is requested.
+  - Thinking blocks stream with empty text unless a thinking display is requested. Since step 2 every session asks for `thinking: {type: 'adaptive', display: 'summarized'}`; the thread shows the summary folded under a "Pensando…" / "Pensó" row.
   - Queued sends in one `query()` can be merged into one turn, so the server pushes the next message only after the previous `result`.
   - `getSessionInfo(sessionId, {dir?})` exists and returns `{sessionId, summary, lastModified, …}` or `undefined`, which is what step 3's resume check needs.
 - **Until step 3** the agent gets only `Read`, `Glob` and `Grep` (`tools`), approved in `canUseTool` rather than `allowedTools`, since a bare `allowedTools` entry bypasses `canUseTool` and that is where the path jail goes. Its `cwd` is `LEMMA_STUDY_DIR`, or the server's working directory.

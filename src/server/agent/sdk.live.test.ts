@@ -80,3 +80,16 @@ live(
 		expect(all.some((e) => e.type === "error")).toBe(false);
 	},
 );
+
+live(
+	"answers follow the conventions: dollars for math, the question's language",
+	async () => {
+		agent?.push(
+			"Sin herramientas: ¿cuál es la derivada de x^2 + 3x? Respondé en dos líneas.",
+		);
+		const answer = text(await turn());
+		expect(answer).toMatch(/\$[^$]*2x[^$]*\$/);
+		expect(answer).not.toMatch(/\\\(|\\\[/);
+		expect(answer).toMatch(/derivada/i);
+	},
+);
