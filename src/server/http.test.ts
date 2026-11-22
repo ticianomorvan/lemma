@@ -2,10 +2,12 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FakeDriver } from "./agent/fake.ts";
 import { startServer } from "./http.ts";
 
 let dir: string;
-let server: Bun.Server<undefined>;
+let server: Awaited<ReturnType<typeof startServer>>;
+const driver = new FakeDriver({ streams: ["math"] });
 
 beforeAll(async () => {
 	dir = await mkdtemp(join(tmpdir(), "lemma-dist-"));
@@ -14,6 +16,7 @@ beforeAll(async () => {
 	server = await startServer({
 		port: 0,
 		distDir: dir,
+		driver,
 	});
 });
 
@@ -46,7 +49,7 @@ test("answers 404, not the shell, for a missing asset", async () => {
 });
 
 test("serves no client in dev", async () => {
-	const dev = await startServer({ port: 0, distDir: null });
+	const dev = await startServer({ port: 0, distDir: null, driver });
 	try {
 		expect((await fetch(new URL("/", dev.url))).status).toBe(404);
 	} finally {
@@ -59,6 +62,7 @@ test("refuses to start without a build", async () => {
 		startServer({
 			port: 0,
 			distDir: join(dir, "missing"),
+			driver,
 		}),
 	).rejects.toThrow("bun run build");
 });

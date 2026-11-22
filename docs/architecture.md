@@ -32,8 +32,8 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 | `auth` | pairing codes, device tokens (hashed), Host/Origin checks | `check(req) → Device\|null`, `startPairing() → {url, expiresAt}`, `redeem(code)`, `revoke(id)` |
 | `folder` | all I/O under the study root: path jail (`realpath`), atomic writes, recursive `fs.watch` (150 ms debounce, our own writes ignored by content hash) | `read`, `writeAtomic`, `list`, `saveAttachment`, `onChange` |
 | `transcript` | Markdown session file ⇄ typed turns | `parse(md) → {meta, turns}`, `appendTurn(path, turn)`, `bodyHash(md)` |
-| `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `snapshot`, `send`, `interrupt`, `subscribe(id, ws)` |
-| `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events | `AgentDriver.start({sessionId, resume?, seed?}) → {push, interrupt, close, events}` |
+| `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
+| `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({sessionId, resume?}) → {push, interrupt, close, events}`; step 3 adds `seed?` |
 | `tools/calc` | in-process MCP server (`createSdkMcpServer`, `tool()`), mathjs + distributions in a Worker | `calc(expr) → value \| error` |
 | `shared` | zod protocol schemas, the event reducer, `normalizeMath` | imported by server and client, so both reduce events identically |
 | `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store | — |
@@ -83,9 +83,11 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 **WebSocket `/ws`:**
 - From the client: `{t: 'sub' | 'unsub', session}`.
 - From the server:
-  - `{t: 'snapshot', session, epoch, seq, status, meta, turns, inflight?, queue}`
+  - `{t: 'snapshot', session, epoch, seq, status, meta, turns, inflight?, queue, notes, error?}`
   - `{t: 'ev', session, epoch, seq, e}`
   - `{t: 'folder', path, kind}`
+  - `{t: 'error', session?, code, message}`, for a `sub` it can't serve (an unknown session or a malformed message).
+- The schemas live in `src/shared/protocol.ts`, and `src/shared/reducer.ts` folds events into the view state (the snapshot minus `t`, `session`, `epoch` and `seq`). The server keeps its snapshot with that same reducer.
 
   `e` is one of:
   - `user_message {turnId, clientMsgId, from, text, anchor?, attachments, queued}`
@@ -93,14 +95,16 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
   - `turn_start {turnId}`
   - `block_start {id, kind: text|thinking|tool, name?}`, then `delta {id, text}`, then `block_end {id}`
   - `tool_result {id, ok, summary}`
-  - `turn_end {turnId, reason, usage}`
+  - `turn_end {turnId, reason: completed|interrupted|error, usage: {inputTokens, outputTokens}}`
   - `error {code, message, clientMsgId?}`
+
+  Block ids are `<API message id>:<index>`, because the SDK restarts block indices in every API message of a turn. A `tool` block's deltas carry its partial JSON input.
 
 **Joining or reconnecting.** A `sub` gets the snapshot, and the socket subscribes to the topic `s:<id>` in the same tick. The server is single-threaded, so no event can fall between the two.
 - The client drops any event with `seq <= snapshot.seq`.
 - On a seq gap, or a changed `epoch` (the server restarted), it re-subscribes.
 - No replay buffer is kept: one session's snapshot is small.
-- A socket that falls behind (`ws.send()` returns 0 or -1) is closed and re-subscribes.
+- A socket that falls behind is closed and re-subscribes: Bun's `backpressureLimit` (1 MiB) with `closeOnBackpressureLimit`, which also covers `server.publish`.
 
 **Two clients sending at once.** Messages are queued in arrival order and broadcast at once with `queued: true`, then fed to the SDK one turn at a time. Any client can interrupt. Each sender matches its own message to the broadcast copy by `clientMsgId`.
 
@@ -166,7 +170,14 @@ study/
   - Integration with the fake driver: two clients receive identical events, a client joining mid-stream gets the snapshot plus the tail, an epoch change after restart, the reseed when the hash differs, and a 403 after a device is revoked.
   - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context.
   - One live smoke test, only under `LIVE=1`.
-- **Check at build time.** The exact shapes of `stream_event` and `result`, and `getSessionInfo`. B's doc lookup failed, so neither candidate confirmed them.
+- **SDK shapes, confirmed in step 1** (SDK 0.3.330, recorded in `test/fixtures/streams/`, documented in `src/server/agent/map.ts`):
+  - `stream_event` is `{event, parent_tool_use_id, uuid, session_id, ttft_ms?}`, where `event` is a raw Messages API stream event. Block indices restart at 0 in every API message.
+  - Tool results come back as `user` messages with `tool_result` content blocks.
+  - Each turn ends with exactly one `result`. A normal turn has `subtype: success`, `terminal_reason: completed`. After `Query.interrupt()` it has `subtype: error_during_execution`, `is_error: true`, `terminal_reason: aborted_streaming`. `usage` is per turn, but `total_cost_usd` is cumulative over the `query()`, so we don't report cost per turn.
+  - Thinking blocks stream with empty text unless a thinking display is requested.
+  - Queued sends in one `query()` can be merged into one turn, so the server pushes the next message only after the previous `result`.
+  - `getSessionInfo(sessionId, {dir?})` exists and returns `{sessionId, summary, lastModified, …}` or `undefined`, which is what step 3's resume check needs.
+- **Until step 3** the agent gets only `Read`, `Glob` and `Grep` (`tools`), approved in `canUseTool` rather than `allowedTools`, since a bare `allowedTools` entry bypasses `canUseTool` and that is where the path jail goes. Its `cwd` is `LEMMA_STUDY_DIR`, or the server's working directory.
 
 ## Rejected
 
