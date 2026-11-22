@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "./fixtures.ts";
 
 test("the production build opens a session at its own URL", async ({
 	page,
@@ -33,7 +33,7 @@ test("the session menu lists the folder's sessions by course and reopens one", a
 test.describe("theme", () => {
 	const light = "rgb(246, 245, 241)";
 	const dark = "rgb(22, 22, 20)";
-	const background = (page: import("@playwright/test").Page) =>
+	const background = (page: Page) =>
 		page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 
 	test("follows the system color scheme", async ({ page }) => {

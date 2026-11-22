@@ -47,7 +47,7 @@ export const UserMessageEvent = z.object({
 	type: z.literal("user_message"),
 	turnId: z.string(),
 	clientMsgId: z.string(),
-	/** The device that sent it. Until auth (step 4) every sender is `local`. */
+	/** The id of the device that sent it; `local` for turns read from the file. */
 	from: z.string(),
 	text: z.string(),
 	anchor: Anchor.optional(),
@@ -288,6 +288,29 @@ export const SetFolderBody = z.object({
 	path: z.string().min(1).max(1024),
 });
 export type SetFolderBody = z.infer<typeof SetFolderBody>;
+
+/** A paired browser. */
+export const Device = z.object({
+	id: z.string(),
+	/** From its User-Agent when it paired, like "Chrome en macOS". */
+	name: z.string(),
+	created: z.string(),
+});
+export type Device = z.infer<typeof Device>;
+
+export const DevicesResponse = z.object({
+	devices: z.array(Device),
+	/** The id of the device asking. */
+	current: z.string(),
+});
+export type DevicesResponse = z.infer<typeof DevicesResponse>;
+
+/** `POST /api/pair`: a one-time link for another browser. */
+export const PairResponse = z.object({
+	url: z.string(),
+	expiresAt: z.string(),
+});
+export type PairResponse = z.infer<typeof PairResponse>;
 
 export const ErrorResponse = z.object({
 	error: z.object({ code: z.string(), message: z.string() }),

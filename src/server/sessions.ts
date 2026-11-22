@@ -154,8 +154,15 @@ export class Sessions {
 		return s && this.snapshotOf(id, s);
 	}
 
-	/** Queues a message; it is answered after every message that arrived before it. */
-	send(id: string, body: SendMessageBody): SendMessageResponse | undefined {
+	/**
+	 * Queues a message from device `from`; it is answered after every message
+	 * that arrived before it.
+	 */
+	send(
+		id: string,
+		body: SendMessageBody,
+		from: string,
+	): SendMessageResponse | undefined {
 		const s = this.load(id);
 		if (!s) return undefined;
 		const turnId = crypto.randomUUID();
@@ -167,7 +174,7 @@ export class Sessions {
 			type: "user_message",
 			turnId,
 			clientMsgId: body.clientMsgId,
-			from: "local",
+			from,
 			text: body.text,
 			...(body.anchor === undefined ? {} : { anchor: body.anchor }),
 			attachments: body.attachmentIds ?? [],

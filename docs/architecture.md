@@ -29,7 +29,7 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 | Module | Owns | Interface (what callers know) |
 |---|---|---|
 | `http` | `Bun.serve` routes, static `dist/`, WS upgrade, auth gate, zod validation | route table |
-| `auth` | pairing codes, device tokens (hashed), Host/Origin checks | `check(req) → Device\|null`, `startPairing() → {url, expiresAt}`, `redeem(code)`, `revoke(id)` |
+| `auth` | pairing codes, device tokens (hashed, in `devices.json`), Host/Origin checks | `new Auth({dir, devOrigin?})` (reads `devices.json` before the port binds), `listen(port)`, `refuse(req) → 'bad_host'\|'bad_origin'\|null`, `check(req) → Device\|null`, `startPairing() → {url, expiresAt}`, `redeem(code, req) → {device, cookie?}\|null`, `revoke(id)`, `list()` |
 | `folder` | all I/O under the study root: path jail (`realpath`), atomic writes, recursive `fs.watch` (150 ms debounce, our own writes ignored by content hash) | `resolve` (the jail), `read`, `writeAtomic`, `list`, `watch`; `saveAttachment` in step 10 |
 | `transcript` | Markdown session file ⇄ typed entries (question, answer, note) | `parse(md) → {meta, entries}`, `appendEntry(transcript, entry)`, `read`/`write`, `bodyHash(body)` |
 | `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
@@ -74,7 +74,8 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 **Commands go over HTTP, and the WebSocket only pushes from the server.** Every action then shares one auth path and can be tested with `curl`.
 
 **HTTP:**
-- `GET /api/state` returns `folder` (null until first run sets it), courses (the folder's top-level folders, without `inbox` and dotfolders), sessions (from the front matter, with the file's `updated` time) and, from step 4, devices.
+- Every route below and `/ws` answer 403 `unpaired` without a valid device cookie, and 403 `bad_host` or `bad_origin` when the screen in Security refuses them. Only `GET /pair/:code` and the client's own files (the SPA shell and its bundle, which hold no data) skip the cookie.
+- `GET /api/state` returns `folder` (null until first run sets it), courses (the folder's top-level folders, without `inbox` and dotfolders) and sessions (from the front matter, with the file's `updated` time). Devices come from `GET /api/devices`.
 - `POST /api/folder {path}`: the first-run screen. It makes the folder if needed and stores it in `config.json`; 409 once a folder is set. Until then the session routes answer 409.
 - `POST /api/sessions {course, title?, mode?}` returns `{id}`. `PATCH /api/sessions/:id {title?, mode?}` (`mode: null` clears it) rewrites the front matter and emits a `meta` event.
 - `GET /api/sessions/:id` returns a snapshot, the same shape as the WebSocket one.
@@ -83,7 +84,9 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 - `POST /api/sessions/:id/interrupt`
 - `POST /api/sessions/:id/attachments` (multipart image) returns `{id, path}`.
 - `GET /api/tree` and `GET /files/*path` (with Range support for pdf.js).
-- `POST /api/pair`, `GET /pair/:code`, `GET /api/devices`, `DELETE /api/devices/:id`.
+- `GET /pair/:code` redeems a pairing code: 303 to `/` with the device cookie, or 403 for an unknown, used or expired code (in production with the SPA shell, which shows "Este enlace ya no sirve" at that path). A browser that is already paired spends the code and gets no new device, so the startup link can open on every start.
+- `POST /api/pair` returns `{url, expiresAt}`, a link for another browser (the phone's QR in step 10).
+- `GET /api/devices` returns `{devices: [{id, name, created}], current}`. `DELETE /api/devices/:id` returns 204, and closes that device's open sockets with code 1008. In dev there is no SPA shell on the Bun server, so a used link gets a JSON 403 there.
 
 **WebSocket `/ws`:**
 - From the client: `{t: 'sub' | 'unsub', session}`.
@@ -131,7 +134,7 @@ study/
   <course>/sessions/2026-11-22-<slug>.md
   <course>/sessions/2026-11-22-<slug>/001-photo.jpg   attachments, linked from the .md
   inbox/                photos sent while no session is open
-~/Library/Application Support/lemma/   config.json (folder, port), devices.json (token hashes)
+~/Library/Application Support/lemma/   config.json (folder, port), devices.json (device names and token hashes)
                                        LEMMA_CONFIG_DIR moves it and LEMMA_STUDY_DIR overrides the folder, for tests
 ```
 
@@ -146,9 +149,13 @@ study/
 
 - **Network and auth.**
   - The server binds `127.0.0.1`, and LAN mode is on only while a paired device exists.
-  - **Every request needs a device cookie, loopback included**, so another local process can't drive an agent that writes files. `bun run start` opens a one-time `/pair/<code>` URL for the desktop. The phone pairs by QR code.
-  - Codes are 128-bit, single use and expire after 5 minutes. Tokens are 256-bit, stored as an `HttpOnly; SameSite=Strict` cookie, and only their hash is kept on the server.
-  - The `Host` header is checked against an allow-list (this blocks DNS rebinding). `Origin` is checked on POSTs and WebSocket upgrades.
+  - **Every request needs a device cookie, loopback included**, so another local process can't drive an agent that writes files. `bun run start` prints and opens a one-time `/pair/<code>` URL for the desktop. The phone pairs by QR code.
+  - Codes are 128-bit, single use and expire after 5 minutes. They live in memory only, so a restart forgets them. Tokens are 256-bit, stored as an `HttpOnly; SameSite=Strict; Path=/` cookie for 400 days, and only their SHA-256 is kept on the server, in `devices.json` (mode 0600, written atomically). A `devices.json` that doesn't parse stops the server rather than pairing nobody.
+  - The cookie is named `lemma-<port>`: cookies are per host, not per port, so two servers on `127.0.0.1` (the two e2e servers, say) must not share one.
+  - The `Host` header is checked against an allow-list on every request, static files included (this blocks DNS rebinding): `127.0.0.1:<port>` and `localhost:<port>`.
+  - `Origin`, when a request carries one, must be `http://127.0.0.1:<port>` or `http://localhost:<port>`; that covers POST, PATCH, DELETE and WebSocket upgrades, where browsers always send it. A request without `Origin` comes from a non-browser client, which still needs the cookie, so `curl` with the cookie works.
+  - In dev only, the Vite origin `http://127.0.0.1:5173` (and its Host, which the proxy forwards unchanged) is trusted as well, and pairing links point at it. It takes an explicit `LEMMA_DEV=1`, which only the `dev:server` script sets, so a server started some other way doesn't trust whatever holds port 5173. `bun run start` (`NODE_ENV=production`) never trusts it; a test and an e2e check on the build prove it.
+  - Revoking the last device leaves nobody to ask for a link, so the server prints a new one (it doesn't open a browser).
 - **Agent.**
   - `disallowedTools: [Bash, NotebookEdit, Task]`.
   - Tools: `Read`, `Glob`, `Grep`, `Write`, `Edit` (`WebFetch` comes later).
@@ -171,13 +178,14 @@ study/
   - Fonts (Inter, Source Serif 4) are self-hosted from `@fontsource-variable`, so the app works offline.
   - Lazy-loaded chunks for KaTeX extras, Vega, Mermaid, viz.js and typst.ts. The PWA is a manifest plus a service worker that caches only the app shell.
 - **Commands.**
-  - `bun run dev`: the Vite dev server (port 5173, with React Fast Refresh) and the Bun server (port 4317) side by side. Vite forwards `/api` and `/ws` to Bun without rewriting `Origin`, so the server's own checks still apply. In dev the server therefore sees `Origin: http://127.0.0.1:5173`, and the step 4 checks must allow it only in dev.
+  - `bun run dev`: the Vite dev server (port 5173, with React Fast Refresh) and the Bun server (port 4317) side by side. Vite forwards `/api`, `/pair` and `/ws` to Bun without rewriting `Host` or `Origin`, so the server's own checks still apply, and the server allows the dev origin only in dev. The server prints a pairing link on the Vite origin on every start, and opens it only while no device is paired, since `bun --watch` restarts it on every save.
   - `bun run build`: `vite build`, which bundles the client to `dist/`.
-  - `bun run start`: serve `dist/`, `/api` and `/ws` on one port.
+  - `bun run start`: serve `dist/`, `/api` and `/ws` on one port, then print and open the pairing link. `LEMMA_OPEN=0` keeps it from opening a browser (tests, CI).
 - **Tests.**
   - `bun test`: the reducer, `normalizeMath`, the transcript round trip, `calc` (known values; `import`, `eval` and loops rejected), the path jail (symlink escapes), and auth.
+  - Auth (`src/server/auth/auth.test.ts`): a 403 for no token on every route, a foreign Host, a foreign Origin (WebSocket upgrades too), a reused or expired code, a revoked token, the gated first-run `POST /api/folder`, and the dev origin outside dev.
   - Integration with the fake driver: two clients receive identical events, a client joining mid-stream gets the snapshot plus the tail, an epoch change after restart, the reseed when the hash differs, and a 403 after a device is revoked.
-  - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context. It runs the server with `LEMMA_FAKE=1`, which swaps in `FakeDriver`: messages replay `math-rich.jsonl` unless they end in a `<!--fixture:<name>-->` paragraph, and `LEMMA_FAKE_DELAY_MS` paces each SDK message. The same mode serves for trying the UI offline. `FakeDriver` saves a session once a turn reaches its `result`, like the SDK, so sharing one driver between two servers models a restart. `bun run test:e2e` builds first, then runs two servers on empty folders under `.e2e/`: one with a study folder and one at the first-run screen.
+  - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context. It runs the server with `LEMMA_FAKE=1`, which swaps in `FakeDriver`: messages replay `math-rich.jsonl` unless they end in a `<!--fixture:<name>-->` paragraph, and `LEMMA_FAKE_DELAY_MS` paces each SDK message. The same mode serves for trying the UI offline. `FakeDriver` saves a session once a turn reaches its `result`, like the SDK, so sharing one driver between two servers models a restart. `bun run test:e2e` builds first, then runs two servers on empty folders under `.e2e/`: one with a study folder and one at the first-run screen. Before each starts, `e2e/seed-device.ts` pairs one device through the `auth` module and leaves its cookie for `e2e/fixtures.ts`, so every test's browser starts paired; `unpaired(browser)` gives a context without it.
   - One live smoke test, only under `LIVE=1`.
 - **SDK shapes, confirmed in step 1** (SDK 0.3.330, recorded in `test/fixtures/streams/`, documented in `src/server/agent/map.ts`):
   - `stream_event` is `{event, parent_tool_use_id, uuid, session_id, ttft_ms?}`, where `event` is a raw Messages API stream event. Block indices restart at 0 in every API message.

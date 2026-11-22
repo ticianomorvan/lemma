@@ -8,8 +8,15 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { StateResponse } from "../shared/protocol.ts";
 import { FakeDriver } from "./agent/fake.ts";
-import { startServer } from "./http.ts";
-import { Client, cleanUp, hold, serve, studyDir, turnEnds } from "./testing.ts";
+import {
+	Client,
+	cleanUp,
+	hold,
+	serve,
+	start,
+	studyDir,
+	turnEnds,
+} from "./testing.ts";
 import { parse } from "./transcript/transcript.ts";
 
 afterEach(cleanUp);
@@ -293,7 +300,7 @@ test("courses are the folder's top-level folders", async () => {
 
 test("first run: no folder until one is chosen, then it is saved", async () => {
 	const saved: string[] = [];
-	const server = await startServer({
+	const { api } = await start({
 		port: 0,
 		distDir: null,
 		driver: new FakeDriver({ streams: ["math"] }),
@@ -301,13 +308,7 @@ test("first run: no folder until one is chosen, then it is saved", async () => {
 		saveStudyDir: (path) => saved.push(path),
 	});
 	const base = await studyDir();
-	try {
-		const api = (path: string, body?: unknown) =>
-			fetch(new URL(path, server.url), {
-				method: body === undefined ? "GET" : "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(body),
-			});
+	{
 		expect(await (await api("/api/state")).json()).toEqual({
 			folder: null,
 			courses: [],
@@ -327,8 +328,6 @@ test("first run: no folder until one is chosen, then it is saved", async () => {
 		);
 		const state = (await (await api("/api/state")).json()) as StateResponse;
 		expect(state.courses).toEqual(["general"]);
-	} finally {
-		await server.stop(true);
 	}
 });
 
@@ -395,43 +394,26 @@ test("Stop pressed while the agent is still starting interrupts the turn", async
 });
 
 test("a saved folder that is gone brings back the first-run screen", async () => {
-	const server = await startServer({
+	const { api } = await start({
 		port: 0,
 		distDir: null,
 		driver: new FakeDriver({ streams: [] }),
 		studyDir: join(await studyDir(), "ya-no-existe"),
 	});
-	try {
-		const state = await (await fetch(new URL("/api/state", server.url))).json();
-		expect(state.folder).toBeNull();
-	} finally {
-		await server.stop(true);
-	}
+	const state = await (await api("/api/state")).json();
+	expect(state.folder).toBeNull();
 });
 
 test("the first-run screen refuses folders that would give Claude too much", async () => {
-	const server = await startServer({
+	const { api } = await start({
 		port: 0,
 		distDir: null,
 		driver: new FakeDriver({ streams: [] }),
 		studyDir: null,
 	});
-	try {
-		for (const path of [
-			"/Users",
-			"~/.ssh",
-			"~/Library/Estudio",
-			"~/x/.oculta",
-		]) {
-			const res = await fetch(new URL("/api/folder", server.url), {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ path }),
-			});
-			expect(res.status).toBe(400);
-			expect((await res.json()).error.code).toBe("too_broad");
-		}
-	} finally {
-		await server.stop(true);
+	for (const path of ["/Users", "~/.ssh", "~/Library/Estudio", "~/x/.oculta"]) {
+		const res = await api("/api/folder", { path });
+		expect(res.status).toBe(400);
+		expect((await res.json()).error.code).toBe("too_broad");
 	}
 });

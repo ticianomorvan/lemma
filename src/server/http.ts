@@ -4,8 +4,11 @@ import {
 	ClientMessage,
 	CreateSessionBody,
 	type CreateSessionResponse,
+	type Device,
+	type DevicesResponse,
 	type ErrorResponse,
 	type InterruptResponse,
+	type PairResponse,
 	PatchSessionBody,
 	SendMessageBody,
 	type ServerMessage,
@@ -13,6 +16,7 @@ import {
 	type StateResponse,
 } from "../shared/protocol.ts";
 import type { AgentDriver } from "./agent/driver.ts";
+import type { Auth } from "./auth/auth.ts";
 import { chooseStudyFolder } from "./config.ts";
 import { Folder } from "./folder/folder.ts";
 import { BadRequest, Sessions, topic } from "./sessions.ts";
@@ -31,10 +35,17 @@ export type ServerOptions = {
 	saveStudyDir?: (path: string) => void;
 	/** How long an agent may sit idle before it is closed. */
 	idleMs?: number;
+	/** Who may talk to the server; the server tells it the port it bound. */
+	auth: Auth;
+	/**
+	 * Called when the last paired device is revoked: nobody can ask for a
+	 * pairing link any more, so the caller prints a new one.
+	 */
+	onNoDevices?: () => void;
 };
 
-/** Per-socket data. Empty until auth (step 4) adds the device. */
-type Socket = Record<string, never>;
+/** Per-socket data: the device the socket was opened by. */
+type Socket = { device: string };
 
 const HOST = "127.0.0.1";
 /** The topic every socket is subscribed to, for `folder` messages. */
@@ -49,6 +60,8 @@ export async function startServer({
 	studyDir,
 	saveStudyDir,
 	idleMs,
+	auth,
+	onNoDevices,
 }: ServerOptions) {
 	const publish = (name: string, message: ServerMessage) =>
 		server.publish(name, JSON.stringify(message));
@@ -75,24 +88,105 @@ export async function startServer({
 			console.error(`cannot open the study folder ${studyDir}:`, cause);
 		}
 	}
-	/** Routes that need the folder answer 409 until it is set. */
-	const withStudy =
-		<R extends Request>(
-			handle: (req: R, study: Study) => Response | Promise<Response>,
-		) =>
+	/** Open sockets by device, so revoking a device closes them. */
+	const sockets = new Map<string, Set<Bun.ServerWebSocket<Socket>>>();
+
+	// Every request passes the Host/Origin screen. Only the client's own files
+	// (which hold no data) and `/pair/:code` skip the device check.
+	const refused = (req: Request) => {
+		const why = auth.refuse(req);
+		return why && error(403, why, REFUSALS[why]);
+	};
+	const trusted =
+		<R extends Request>(handle: (req: R) => Response | Promise<Response>) =>
 		(req: R) =>
+			refused(req) ?? handle(req);
+	const paired =
+		<R extends Request, A extends unknown[]>(
+			handle: (
+				req: R,
+				device: Device,
+				...rest: A
+			) => Response | undefined | Promise<Response>,
+		) =>
+		(req: R, ...rest: A) => {
+			const denied = refused(req);
+			if (denied) return denied;
+			const device = auth.check(req);
+			return device ? handle(req, device, ...rest) : unpaired();
+		};
+	/** Routes that need the folder answer 409 until it is set. */
+	const withStudy = <R extends Request>(
+		handle: (
+			req: R,
+			study: Study,
+			device: Device,
+		) => Response | Promise<Response>,
+	) =>
+		paired((req: R, device) =>
 			study
-				? handle(req, study)
-				: error(409, "no_folder", "choose the study folder first");
+				? handle(req, study, device)
+				: error(409, "no_folder", "choose the study folder first"),
+		);
+	const client = distDir ? await clientRoutes(distDir, trusted) : null;
 
 	const server: Bun.Server<Socket> = Bun.serve({
 		hostname: HOST,
 		port,
 		maxRequestBodySize: 1024 * 1024,
 		routes: {
-			...(distDir ? await clientRoutes(distDir) : {}),
+			...client?.routes,
+			"/pair/:code": {
+				GET: trusted((req) => {
+					const redeemed = auth.redeem(req.params.code, req);
+					if (!redeemed) {
+						// The client shows "this link no longer works" at this path.
+						return client
+							? new Response(client.index, {
+									status: 403,
+									headers: { "cache-control": "no-store" },
+								})
+							: error(403, "bad_code", "this pairing link was used or expired");
+					}
+					return new Response(null, {
+						status: 303,
+						headers: {
+							location: "/",
+							"cache-control": "no-store",
+							...(redeemed.cookie ? { "set-cookie": redeemed.cookie } : {}),
+						},
+					});
+				}),
+			},
+			"/api/pair": {
+				POST: paired(() =>
+					Response.json(auth.startPairing() satisfies PairResponse, {
+						status: 201,
+					}),
+				),
+			},
+			"/api/devices": {
+				GET: paired((_, device) =>
+					Response.json({
+						devices: auth.list(),
+						current: device.id,
+					} satisfies DevicesResponse),
+				),
+			},
+			"/api/devices/:id": {
+				DELETE: paired((req) => {
+					const { id } = req.params;
+					if (!auth.revoke(id)) {
+						return error(404, "not_found", "no such device");
+					}
+					for (const ws of sockets.get(id) ?? []) ws.close(1008, "revoked");
+					sockets.delete(id);
+					if (auth.list().length === 0) onNoDevices?.();
+					return new Response(null, { status: 204 });
+				}),
+			},
 			"/api/state": {
-				GET: () =>
+				GET: paired(() =>
 					Response.json(
 						(study
 							? {
@@ -106,9 +200,10 @@ export async function startServer({
 									sessions: [],
 								}) satisfies StateResponse,
 					),
+				),
 			},
 			"/api/folder": {
-				POST: (req) =>
+				POST: paired((req) =>
 					withBody(req, SetFolderBody, (body) => {
 						if (study) {
 							return error(
@@ -134,6 +229,7 @@ export async function startServer({
 							{ status: 201 },
 						);
 					}),
+				),
 			},
 			"/api/sessions": {
 				POST: withStudy((req, { sessions }) =>
@@ -156,9 +252,9 @@ export async function startServer({
 				),
 			},
 			"/api/sessions/:id/messages": {
-				POST: withStudy((req, { sessions }) =>
+				POST: withStudy((req, { sessions }, device) =>
 					withBody(req, SendMessageBody, (body) =>
-						found(sessions.send(req.params.id, body), 202),
+						found(sessions.send(req.params.id, body, device.id), 202),
 					),
 				),
 			},
@@ -172,18 +268,26 @@ export async function startServer({
 					);
 				}),
 			},
-			"/api/*": () => error(404, "not_found", "no such route"),
-			"/ws": (req, server) =>
-				server.upgrade(req, { data: {} })
+			"/api/*": paired(() => error(404, "not_found", "no such route")),
+			"/ws": paired((req, device, server: Bun.Server<Socket>) =>
+				server.upgrade(req, { data: { device: device.id } })
 					? undefined
 					: error(400, "bad_request", "expected a WebSocket upgrade"),
+			),
 		},
 		websocket: {
 			// A socket that falls this far behind is closed; its client re-subscribes.
 			backpressureLimit: 1024 * 1024,
 			closeOnBackpressureLimit: true,
 			open(ws) {
+				const own = sockets.get(ws.data.device) ?? new Set();
+				sockets.set(ws.data.device, own.add(ws));
 				ws.subscribe(FOLDER_TOPIC);
+			},
+			close(ws) {
+				const own = sockets.get(ws.data.device);
+				own?.delete(ws);
+				if (own?.size === 0) sockets.delete(ws.data.device);
 			},
 			message(ws, raw) {
 				const parsed = ClientMessage.safeParse(parseJson(String(raw)));
@@ -210,7 +314,7 @@ export async function startServer({
 				ws.subscribe(topic(session));
 			},
 		},
-		fetch: () => new Response("Not found", { status: 404 }),
+		fetch: (req) => refused(req) ?? new Response("Not found", { status: 404 }),
 		error(cause) {
 			if (cause instanceof BadRequest) {
 				return error(400, "bad_request", cause.message);
@@ -219,6 +323,7 @@ export async function startServer({
 			return error(500, "internal", String(cause));
 		},
 	});
+	auth.listen(server.port as number);
 	const stop = server.stop.bind(server);
 	// Stopping the server also closes the watcher and the live agents.
 	server.stop = (closeActiveConnections?: boolean) => {
@@ -228,6 +333,18 @@ export async function startServer({
 	};
 	return server;
 }
+
+const REFUSALS = {
+	bad_host: "this server only answers to 127.0.0.1 and localhost",
+	bad_origin: "requests from other sites are refused",
+} as const;
+
+const unpaired = () =>
+	error(
+		403,
+		"unpaired",
+		"this browser is not paired: open the link Lemma prints at startup",
+	);
 
 function send(ws: Bun.ServerWebSocket<Socket>, message: ServerMessage) {
 	ws.send(JSON.stringify(message));
@@ -270,11 +387,16 @@ function parseJson(text: string): unknown {
 	}
 }
 
+type Route = (req: Request) => Response | Promise<Response>;
+
 /**
  * One route per file in the build output. Other paths without an extension get
  * the SPA shell; a missing asset (say, a stale hashed bundle) gets a 404, not HTML.
  */
-async function clientRoutes(distDir: string) {
+async function clientRoutes(
+	distDir: string,
+	wrap: (handle: (req: Request) => Response) => Route,
+) {
 	const root = resolve(distDir);
 	const index = Bun.file(join(root, "index.html"));
 	if (!(await index.exists())) {
@@ -282,13 +404,19 @@ async function clientRoutes(distDir: string) {
 			`${root}/index.html not found; run \`bun run build\` first`,
 		);
 	}
-	const routes: Record<string, Response | ((req: Request) => Response)> = {};
+	const routes: Record<string, Route> = {};
 	for await (const path of new Bun.Glob("**/*").scan(root)) {
-		routes[`/${path}`] = new Response(Bun.file(join(root, path)));
+		const file = Bun.file(join(root, path));
+		// Vite puts content hashes in every name under assets/.
+		const headers: HeadersInit = path.startsWith("assets/")
+			? { "cache-control": "public, max-age=31536000, immutable" }
+			: {};
+		routes[`/${path}`] = wrap(() => new Response(file, { headers }));
 	}
-	routes["/*"] = (req) =>
+	routes["/*"] = wrap((req) =>
 		extname(new URL(req.url).pathname)
 			? new Response("Not found", { status: 404 })
-			: new Response(index);
-	return routes;
+			: new Response(index),
+	);
+	return { routes, index };
 }

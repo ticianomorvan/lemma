@@ -9,6 +9,7 @@ import { Input } from "#components/ui/input.tsx";
 import { Label } from "#components/ui/label.tsx";
 import { APP_NAME } from "../shared/app.ts";
 import type { SetFolderBody } from "../shared/protocol.ts";
+import { isUnpaired } from "./unpaired.ts";
 
 /** Server error codes, in the words the screen uses. */
 const ERRORS: Record<string, string> = {
@@ -19,7 +20,14 @@ const ERRORS: Record<string, string> = {
 	folder_set: "La carpeta ya estaba elegida. Recargá la página.",
 };
 
-export function FolderSetup({ onDone }: { onDone: () => void }) {
+export function FolderSetup({
+	onDone,
+	onUnpaired,
+}: {
+	onDone: () => void;
+	/** Revoked from another browser while this screen was open. */
+	onUnpaired: () => void;
+}) {
 	const [path, setPath] = useState("~/Estudio");
 	const [error, setError] = useState<string>();
 	const [busy, setBusy] = useState(false);
@@ -35,6 +43,7 @@ export function FolderSetup({ onDone }: { onDone: () => void }) {
 				body: JSON.stringify({ path } satisfies SetFolderBody),
 			});
 			if (res.ok) return onDone();
+			if (await isUnpaired(res)) return onUnpaired();
 			const body = (await res.json().catch(() => ({}))) as {
 				error?: { code?: string };
 			};

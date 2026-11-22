@@ -3,7 +3,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeDriver } from "./agent/fake.ts";
+import { Auth } from "./auth/auth.ts";
 import { startServer } from "./http.ts";
+import { cleanUp, start } from "./testing.ts";
 
 let dir: string;
 let server: Awaited<ReturnType<typeof startServer>>;
@@ -13,16 +15,16 @@ beforeAll(async () => {
 	dir = await mkdtemp(join(tmpdir(), "lemma-dist-"));
 	await writeFile(join(dir, "index.html"), "<title>shell</title>");
 	await writeFile(join(dir, "app-abc.js"), "console.log(1)");
-	server = await startServer({
+	({ server } = await start({
 		port: 0,
 		distDir: dir,
 		driver,
 		studyDir: null,
-	});
+	}));
 });
 
 afterAll(async () => {
-	await server.stop(true);
+	await cleanUp();
 	await rm(dir, { recursive: true });
 });
 
@@ -50,17 +52,13 @@ test("answers 404, not the shell, for a missing asset", async () => {
 });
 
 test("serves no client in dev", async () => {
-	const dev = await startServer({
+	const { server: dev } = await start({
 		port: 0,
 		distDir: null,
 		driver,
 		studyDir: null,
 	});
-	try {
-		expect((await fetch(new URL("/", dev.url))).status).toBe(404);
-	} finally {
-		await dev.stop(true);
-	}
+	expect((await fetch(new URL("/", dev.url))).status).toBe(404);
 });
 
 test("refuses to start without a build", async () => {
@@ -70,6 +68,7 @@ test("refuses to start without a build", async () => {
 			distDir: join(dir, "missing"),
 			driver,
 			studyDir: null,
+			auth: new Auth({ dir }),
 		}),
 	).rejects.toThrow("bun run build");
 });
