@@ -16,6 +16,20 @@ It runs on your own computer. Your notes, sessions and photos stay as plain file
 
 Read more in [docs/spec.md](docs/spec.md) and [docs/architecture.md](docs/architecture.md). There is also a clickable [UI prototype](prototype/workspace.html): open it in a browser.
 
+## Development
+
+Needs [Bun](https://bun.sh) 1.4.
+
+```sh
+bun install
+bun run dev      # http://127.0.0.1:5173: Vite (client) plus the Bun server (API, port 4317)
+bun run build    # vite build: bundle the client to dist/
+bun run start    # serve dist/ (set PORT to change the port)
+bun run check    # typecheck, Biome, bun test, Playwright on the production build
+```
+
+Playwright needs Chromium once: `bunx playwright install chromium`.
+
 ## Signing in to Claude
 
 Lemma never asks for, reads or stores your Claude credentials. It runs the official, unmodified Claude Code program, and you sign in to that yourself in one of two ways:
