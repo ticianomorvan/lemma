@@ -12,7 +12,7 @@
 		"start": "NODE_ENV=production bun src/server/main.ts",
 		"typecheck": "tsc --noEmit",
 		"lint": "biome check .",
-		"test:e2e": "playwright test",
+		"test:e2e": "bun run build && playwright test",
 		"check": "bun run typecheck && bun run lint && bun test && bun run test:e2e",
 		"test:live": "LIVE=1 bun test --timeout 180000 src/server/agent/sdk.live.test.ts",
 		"record:stream": "bun src/server/agent/record.ts"

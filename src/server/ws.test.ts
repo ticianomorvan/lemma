@@ -4,112 +4,12 @@
  */
 import { afterEach, expect, test } from "bun:test";
 import {
-	type EventMessage,
 	SendMessageResponse,
-	ServerMessage,
-	type SessionEvent,
 	type SnapshotMessage,
 } from "../shared/protocol.ts";
-import { reduce } from "../shared/reducer.ts";
-import { FakeDriver, type FakeDriverOptions } from "./agent/fake.ts";
-import { startServer } from "./http.ts";
+import { Client, cleanUp, hold, serve, turnEnds } from "./testing.ts";
 
-type Server = Awaited<ReturnType<typeof startServer>>;
-const servers: Server[] = [];
-const sockets: WebSocket[] = [];
-
-afterEach(async () => {
-	for (const ws of sockets.splice(0)) ws.close();
-	for (const server of servers.splice(0)) await server.stop(true);
-});
-
-async function serve(options: FakeDriverOptions) {
-	const driver = new FakeDriver(options);
-	const server = await startServer({ port: 0, distDir: null, driver });
-	servers.push(server);
-	const api = (path: string, body?: unknown) =>
-		fetch(new URL(path, server.url), {
-			method: body === undefined ? "GET" : "POST",
-			headers: { "content-type": "application/json" },
-			body: body === undefined ? undefined : JSON.stringify(body),
-		});
-	const res = await api("/api/sessions", { course: "probabilidad" });
-	expect(res.status).toBe(201);
-	const { id } = (await res.json()) as { id: string };
-	return { server, api, id, driver };
-}
-
-/** Holds replay before message `index` of turn `turn` until `release()`. */
-function hold(index: number, turn = 0) {
-	let release = () => {};
-	let reached = () => {};
-	const held = new Promise<void>((resolve) => (release = resolve));
-	const arrived = new Promise<void>((resolve) => (reached = resolve));
-	return {
-		pace: (i: number, t: number) => {
-			if (i !== index || t !== turn) return;
-			reached();
-			return held;
-		},
-		arrived,
-		release: () => release(),
-	};
-}
-
-class Client {
-	readonly messages: ServerMessage[] = [];
-	private waiters: (() => void)[] = [];
-
-	private constructor(readonly ws: WebSocket) {
-		ws.onmessage = (m) => {
-			this.messages.push(ServerMessage.parse(JSON.parse(String(m.data))));
-			for (const wake of this.waiters.splice(0)) wake();
-		};
-	}
-
-	static async subscribe(server: Server, session: string) {
-		const ws = new WebSocket(
-			new URL("/ws", server.url.href.replace("http", "ws")),
-		);
-		sockets.push(ws);
-		await new Promise((resolve) => (ws.onopen = resolve));
-		const client = new Client(ws);
-		ws.send(JSON.stringify({ t: "sub", session }));
-		await client.until((m) => m.t === "snapshot");
-		return client;
-	}
-
-	get snapshot() {
-		return this.messages.find((m) => m.t === "snapshot") as SnapshotMessage;
-	}
-
-	get events() {
-		return this.messages.filter((m): m is EventMessage => m.t === "ev");
-	}
-
-	/** Resolves once a message matches, including one already received. */
-	async until(match: (m: ServerMessage) => boolean) {
-		while (!this.messages.some(match)) {
-			await new Promise<void>((wake) => this.waiters.push(wake));
-		}
-	}
-
-	untilEvent(match: (e: SessionEvent) => boolean) {
-		return this.until((m) => m.t === "ev" && match(m.e));
-	}
-
-	/** The view this client holds: its snapshot plus the events after it. */
-	view() {
-		const { t: _, session: __, epoch: ___, seq: ____, ...view } = this.snapshot;
-		return reduce(
-			view,
-			this.events.map((m) => m.e),
-		);
-	}
-}
-
-const turnEnds = (n: number) => (c: Client) =>
-	c.until(() => c.events.filter((m) => m.e.type === "turn_end").length >= n);
+afterEach(cleanUp);
 
 test("two clients receive identical events", async () => {
 	const { server, api, id } = await serve({ streams: ["tool"] });
@@ -282,10 +182,15 @@ test("a failed agent ends its turn with an error, and the next turn resumes", as
 		expect.objectContaining({ type: "error", code: "agent_failed" }),
 	);
 	expect(client.view().error).toBeUndefined();
-	expect(driver.started).toEqual([
-		{ sessionId: id },
-		{ sessionId: id, resume: id },
-	]);
+	// The crashed agent may not have saved its session, so the next one
+	// starts fresh, seeded with the transcript so far.
+	const [first, second] = driver.started;
+	expect(first).toMatchObject({ resumed: false });
+	expect(first?.seed).toBeUndefined();
+	expect(second).toMatchObject({ resumed: false });
+	expect(second?.sdkSessionId).not.toBe(first?.sdkSessionId);
+	expect(second?.seed).toContain("## Tú\n\nuno");
+	expect(second?.seed).not.toContain("dos");
 });
 
 test("bad input gets a 400, non-JSON a 415 and an unknown session a 404", async () => {

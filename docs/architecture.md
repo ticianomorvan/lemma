@@ -30,10 +30,10 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 |---|---|---|
 | `http` | `Bun.serve` routes, static `dist/`, WS upgrade, auth gate, zod validation | route table |
 | `auth` | pairing codes, device tokens (hashed), Host/Origin checks | `check(req) → Device\|null`, `startPairing() → {url, expiresAt}`, `redeem(code)`, `revoke(id)` |
-| `folder` | all I/O under the study root: path jail (`realpath`), atomic writes, recursive `fs.watch` (150 ms debounce, our own writes ignored by content hash) | `read`, `writeAtomic`, `list`, `saveAttachment`, `onChange` |
-| `transcript` | Markdown session file ⇄ typed turns | `parse(md) → {meta, turns}`, `appendTurn(path, turn)`, `bodyHash(md)` |
+| `folder` | all I/O under the study root: path jail (`realpath`), atomic writes, recursive `fs.watch` (150 ms debounce, our own writes ignored by content hash) | `resolve` (the jail), `read`, `writeAtomic`, `list`, `watch`; `saveAttachment` in step 10 |
+| `transcript` | Markdown session file ⇄ typed entries (question, answer, note) | `parse(md) → {meta, entries}`, `appendEntry(transcript, entry)`, `read`/`write`, `bodyHash(body)` |
 | `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
-| `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({sessionId, resume?}) → {push, interrupt, close, events}`; step 3 adds `seed?` |
+| `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({folder, resumeId?, seed?}) → Promise<{sdkSessionId, resumed, push, interrupt, close, events}>`: it resumes `resumeId` if the SDK still has it, else starts fresh with the seed |
 | `tools/calc` | in-process MCP server (`createSdkMcpServer`, `tool()`), mathjs + distributions in a Worker | `calc(expr) → value \| error` |
 | `shared` | zod protocol schemas, the event reducer, `normalize-math` (`\(…\)`/`\[…\]` to dollars and escaping currency, after assistant-ui's heuristics, outside code; plus holding an unclosed display formula as raw source) | imported by server and client, so both reduce events identically |
 | `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store (`client/store.ts`); the thread view and composer in `client/thread/`; Markdown + KaTeX in `client/markdown/` | — |
@@ -49,7 +49,7 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 **Front matter:** `id`, `course`, `title`, `created`, `mode`, `sdk_session_id`, `sdk_body_hash`.
 
 **Lifecycle:**
-1. **Create.** `POST /api/sessions` generates the UUID and writes the `.md` before the first turn. It passes that UUID to the SDK as `sessionId`.
+1. **Create.** `POST /api/sessions` generates the UUID and writes `<course>/sessions/<date>-<slug>.md` before the first turn (the slug comes from the title, or the id's first 8 characters). A missing course folder is made. The first message becomes the title when there is none.
 2. **Open.** The first send starts `query({prompt: AsyncIterable<SDKUserMessage>, options})` in streaming-input mode, with these options:
    - `cwd`: the study root.
    - `settingSources: ['project']`, which loads `.claude/skills` and keeps the user's global hooks and MCP servers out.
@@ -59,19 +59,24 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
    - `canUseTool`, the path jail.
 3. **Stream.** SDK messages are mapped to our own events. Raw SDK messages never reach clients, so an SDK update can't break the protocol.
 4. **Write the transcript.**
-   - The user message is appended when it is accepted.
+   - The user message is appended when its turn starts (not when it is queued), so each answer follows its own question even when messages queue up. Queued messages a crash loses were never answered. Every append reads the file from disk first.
    - The assistant turn is appended at `turn_end`, with an atomic write.
    - The transcript is append-only and earlier turns are never rewritten. If the file changed on disk during a turn, the server re-reads it and appends to that version, so the user's edit survives.
-5. **Interrupt.** `Query.interrupt()`. The partial answer is appended, marked *(interrupted)*.
-6. **Resume.** The server uses `resume: sdk_session_id` when the SDK session still exists *and* the body hash matches the file. If either check fails, it starts a fresh SDK session seeded with the transcript and records the new id.
+5. **Interrupt.** `Query.interrupt()`. The partial answer is appended under `## Claude *(interrumpida)*` (Spanish, like the rest of the file a person reads). An answer cut by an error gets `*(error)*`.
+6. **Resume.** When a session's agent starts, it gets `resumeId: sdk_session_id` only if `sdk_body_hash` matches the body just before the new question; the driver then resumes only if the SDK still has that session (`getSessionInfo(id, {dir: root})`). Otherwise it starts a fresh SDK session with a new random id, seeded with the transcript, and the next turn end records that id.
+   - The server keeps one hash per live agent: the body as that agent knows it. Both front-matter fields are written when a turn ends and the file still matches that hash, so a crash mid-turn (or before the SDK saved anything) or an edit during the turn leaves a hash that no longer matches, and the next start reseeds.
+   - An outside edit between turns no longer matches the live agent's hash either: the agent is closed before the next turn and a fresh one is seeded. An idle session also reloads its thread from the file and pushes a new snapshot.
+   - The seed is sent as a text block before the first message, not in the system prompt, so it is part of the saved history a later resume brings back.
+7. **Idle.** An agent idle for 10 minutes is closed. Its session stays loaded, and the next send resumes the SDK session.
 
 ## Client protocol
 
 **Commands go over HTTP, and the WebSocket only pushes from the server.** Every action then shares one auth path and can be tested with `curl`.
 
 **HTTP:**
-- `GET /api/state` returns courses, sessions (from the front matter) and, for the desktop, devices.
-- `POST /api/sessions {course, title?, mode?}` returns `{id}`. `PATCH /api/sessions/:id {title, mode}`.
+- `GET /api/state` returns `folder` (null until first run sets it), courses (the folder's top-level folders, without `inbox` and dotfolders), sessions (from the front matter, with the file's `updated` time) and, from step 4, devices.
+- `POST /api/folder {path}`: the first-run screen. It makes the folder if needed and stores it in `config.json`; 409 once a folder is set. Until then the session routes answer 409.
+- `POST /api/sessions {course, title?, mode?}` returns `{id}`. `PATCH /api/sessions/:id {title?, mode?}` (`mode: null` clears it) rewrites the front matter and emits a `meta` event.
 - `GET /api/sessions/:id` returns a snapshot, the same shape as the WebSocket one.
 - `POST /api/sessions/:id/messages {clientMsgId, text, anchor?: {path, page, text}, attachmentIds?}`
 - `POST /api/sessions/:id/notes {anchor, text?}`: your own highlight or note, stored in the transcript, with no Claude turn. Claude sees notes as context on the next send.
@@ -85,7 +90,7 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 - From the server:
   - `{t: 'snapshot', session, epoch, seq, status, meta, turns, inflight?, queue, notes, error?}`
   - `{t: 'ev', session, epoch, seq, e}`
-  - `{t: 'folder', path, kind}`
+  - `{t: 'folder', path, kind}`, to every socket, for a change made outside the app (our own writes are skipped)
   - `{t: 'error', session?, code, message}`, for a `sub` it can't serve (an unknown session or a malformed message).
 - The schemas live in `src/shared/protocol.ts`, and `src/shared/reducer.ts` folds events into the view state (the snapshot minus `t`, `session`, `epoch` and `seq`). The server keeps its snapshot with that same reducer.
 
@@ -96,6 +101,7 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
   - `block_start {id, kind: text|thinking|tool, name?}`, then `delta {id, text}`, then `block_end {id}`
   - `tool_result {id, ok, summary}`
   - `turn_end {turnId, reason: completed|interrupted|error, usage: {inputTokens, outputTokens}}`
+  - `meta {meta}`, when the title or mode changes
   - `error {code, message, clientMsgId?}`
 
   Block ids are `<API message id>:<index>`, because the SDK restarts block indices in every API message of a turn. A `tool` block's deltas carry its partial JSON input.
@@ -114,7 +120,7 @@ A session is one thread. Its views are lenses over that thread, chosen per clien
 - **Read.** The material is in the centre. Anchored turns and notes for the visible page show as margin cards. Opening the chat panel shows the full thread beside the page, and the cards fold into numbered pins in the page gutter. Clicking a pin scrolls the panel.
 - **Practice.** The thread as a notebook document. Anchors become citations that open the page in a drawer. Phone photos go here.
 - **Switching** is instant (a keyboard shortcut and a segmented control, with no animation). Each client keeps its own view, so the desktop can be in Read while the phone is in Practice.
-- **In the transcript,** an anchor is a blockquote linking `materials/<file>.pdf#page=N`, and a note is a `> [!note]` blockquote. Both stay readable in any editor.
+- **In the transcript,** entries sit under the exact headings `## Tú`, `## Claude` (or `## Claude *(interrumpida)*`, `## Claude *(error)*`) and `## Nota`. A line in an answer that reads exactly like one of them is written with a leading `\`. An anchor is a blockquote at the top of the question, `> [apunte.pdf, p. 3](../../<course>/materials/apunte.pdf#page=3)` followed by the quoted lines. A note is a `> [!note] <link>` blockquote with the quote nested (`> > …`) and the note's text after it. Session files always sit two folders deep, so the `../../` links open in any editor. Only answer text is written; thinking and tool calls are not.
 
 ## Files
 
@@ -126,6 +132,7 @@ study/
   <course>/sessions/2026-11-22-<slug>/001-photo.jpg   attachments, linked from the .md
   inbox/                photos sent while no session is open
 ~/Library/Application Support/lemma/   config.json (folder, port), devices.json (token hashes)
+                                       LEMMA_CONFIG_DIR moves it and LEMMA_STUDY_DIR overrides the folder, for tests
 ```
 
 - **Photos.**
@@ -144,7 +151,9 @@ study/
   - The `Host` header is checked against an allow-list (this blocks DNS rebinding). `Origin` is checked on POSTs and WebSocket upgrades.
 - **Agent.**
   - `disallowedTools: [Bash, NotebookEdit, Task]`.
-  - `canUseTool` resolves every path and allows only paths inside the root. Writes are denied under `.claude/` (except `skills/`), `sessions/` and `inbox/`.
+  - Tools: `Read`, `Glob`, `Grep`, `Write`, `Edit` (`WebFetch` comes later).
+  - The path jail (`agent/tools.ts`) resolves every path with `realpath` and allows only paths inside the root, so a symlink pointing out is refused. Globs with `..` or an absolute start are refused. Writes are denied under `.claude/` (except `skills/`), `<course>/sessions/` and `inbox/`, case-insensitively.
+  - It runs as a `PreToolUse` hook and again in `canUseTool`. The hook is the one that matters: confirmed live in step 3, the SDK approves `Read`s inside `cwd` without calling `canUseTool`.
   - `WebFetch` is limited to public http(s) hosts and can be switched off. The remaining risk is a PDF injecting URLs into the conversation.
 - **`calc`.**
   - A locked mathjs instance: `import`, `createUnit`, `evaluate`, `parse`, `simplify` and `derivative` are stubbed out.
@@ -168,7 +177,7 @@ study/
 - **Tests.**
   - `bun test`: the reducer, `normalizeMath`, the transcript round trip, `calc` (known values; `import`, `eval` and loops rejected), the path jail (symlink escapes), and auth.
   - Integration with the fake driver: two clients receive identical events, a client joining mid-stream gets the snapshot plus the tail, an epoch change after restart, the reseed when the hash differs, and a 403 after a device is revoked.
-  - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context. It runs the server with `LEMMA_FAKE=1`, which swaps in `FakeDriver`: messages replay `math-rich.jsonl` unless they end in a `<!--fixture:<name>-->` paragraph, and `LEMMA_FAKE_DELAY_MS` paces each SDK message. The same mode serves for trying the UI offline.
+  - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context. It runs the server with `LEMMA_FAKE=1`, which swaps in `FakeDriver`: messages replay `math-rich.jsonl` unless they end in a `<!--fixture:<name>-->` paragraph, and `LEMMA_FAKE_DELAY_MS` paces each SDK message. The same mode serves for trying the UI offline. `FakeDriver` saves a session once a turn reaches its `result`, like the SDK, so sharing one driver between two servers models a restart. `bun run test:e2e` builds first, then runs two servers on empty folders under `.e2e/`: one with a study folder and one at the first-run screen.
   - One live smoke test, only under `LIVE=1`.
 - **SDK shapes, confirmed in step 1** (SDK 0.3.330, recorded in `test/fixtures/streams/`, documented in `src/server/agent/map.ts`):
   - `stream_event` is `{event, parent_tool_use_id, uuid, session_id, ttft_ms?}`, where `event` is a raw Messages API stream event. Block indices restart at 0 in every API message.
@@ -177,7 +186,7 @@ study/
   - Thinking blocks stream with empty text unless a thinking display is requested. Since step 2 every session asks for `thinking: {type: 'adaptive', display: 'summarized'}`; the thread shows the summary folded under a "Pensando…" / "Pensó" row.
   - Queued sends in one `query()` can be merged into one turn, so the server pushes the next message only after the previous `result`.
   - `getSessionInfo(sessionId, {dir?})` exists and returns `{sessionId, summary, lastModified, …}` or `undefined`, which is what step 3's resume check needs.
-- **Until step 3** the agent gets only `Read`, `Glob` and `Grep` (`tools`), approved in `canUseTool` rather than `allowedTools`, since a bare `allowedTools` entry bypasses `canUseTool` and that is where the path jail goes. Its `cwd` is `LEMMA_STUDY_DIR`, or the server's working directory.
+- Tools are approved in `canUseTool`, never `allowedTools`, since a bare `allowedTools` entry bypasses `canUseTool`. `cwd` is the study folder.
 
 ## Rejected
 

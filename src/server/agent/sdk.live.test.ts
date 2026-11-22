@@ -5,6 +5,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Folder } from "../folder/folder.ts";
 import type { AgentEvent, AgentSession } from "./driver.ts";
 import { SdkDriver } from "./sdk.ts";
 
@@ -12,6 +13,8 @@ const live = test.skipIf(!process.env.LIVE);
 let dir = "";
 let agent: AgentSession | undefined;
 let events: AsyncIterator<AgentEvent> | undefined;
+let folder: Folder | undefined;
+const driver = new SdkDriver();
 
 afterAll(async () => {
 	agent?.close();
@@ -40,7 +43,8 @@ live("a real turn reads a file and completes", async () => {
 		join(dir, "notas.md"),
 		"La varianza de una Bernoulli es $p(1-p)$.\n",
 	);
-	agent = new SdkDriver(dir).start({ sessionId: crypto.randomUUID() });
+	folder = new Folder(dir);
+	agent = await driver.start({ folder });
 	events = agent.events[Symbol.asyncIterator]();
 
 	agent.push("Leé notas.md y decime en una línea qué fórmula aparece.");
@@ -93,3 +97,18 @@ live(
 		expect(answer).toMatch(/derivada/i);
 	},
 );
+
+live("the SDK saved the session, so a new agent resumes it", async () => {
+	if (!folder || !agent) throw new Error("no agent");
+	const resumed = await driver.start({ folder, resumeId: agent.sdkSessionId });
+	resumed.close();
+	expect(resumed).toMatchObject({
+		sdkSessionId: agent.sdkSessionId,
+		resumed: true,
+	});
+	const missing = crypto.randomUUID();
+	const fresh = await driver.start({ folder, resumeId: missing, seed: "x" });
+	fresh.close();
+	expect(fresh.resumed).toBe(false);
+	expect(fresh.sdkSessionId).not.toBe(missing);
+});

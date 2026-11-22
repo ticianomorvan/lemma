@@ -6,12 +6,16 @@ import {
 	type CreateSessionResponse,
 	type ErrorResponse,
 	type InterruptResponse,
+	PatchSessionBody,
 	SendMessageBody,
 	type ServerMessage,
+	SetFolderBody,
 	type StateResponse,
 } from "../shared/protocol.ts";
 import type { AgentDriver } from "./agent/driver.ts";
-import { Sessions, topic } from "./sessions.ts";
+import { chooseStudyFolder } from "./config.ts";
+import { Folder } from "./folder/folder.ts";
+import { BadRequest, Sessions, topic } from "./sessions.ts";
 
 export type ServerOptions = {
 	port: number;
@@ -21,17 +25,66 @@ export type ServerOptions = {
 	 */
 	distDir: string | null;
 	driver: AgentDriver;
+	/** The study folder, or null to ask for it on first run. */
+	studyDir: string | null;
+	/** Stores the folder the first-run screen chose. */
+	saveStudyDir?: (path: string) => void;
+	/** How long an agent may sit idle before it is closed. */
+	idleMs?: number;
 };
 
 /** Per-socket data. Empty until auth (step 4) adds the device. */
 type Socket = Record<string, never>;
 
 const HOST = "127.0.0.1";
+/** The topic every socket is subscribed to, for `folder` messages. */
+const FOLDER_TOPIC = "folder";
 
-export async function startServer({ port, distDir, driver }: ServerOptions) {
-	const sessions = new Sessions(driver, (name, message) =>
-		server.publish(name, JSON.stringify(message)),
-	);
+type Study = { folder: Folder; sessions: Sessions; unwatch: () => void };
+
+export async function startServer({
+	port,
+	distDir,
+	driver,
+	studyDir,
+	saveStudyDir,
+	idleMs,
+}: ServerOptions) {
+	const publish = (name: string, message: ServerMessage) =>
+		server.publish(name, JSON.stringify(message));
+	const open = (dir: string): Study => {
+		const folder = new Folder(dir);
+		const sessions = new Sessions({
+			driver,
+			folder,
+			publish,
+			...(idleMs === undefined ? {} : { idleMs }),
+		});
+		const unwatch = folder.watch((change) => {
+			publish(FOLDER_TOPIC, { t: "folder", ...change });
+			sessions.changed(change);
+		});
+		return { folder, sessions, unwatch };
+	};
+	let study: Study | null = null;
+	if (studyDir) {
+		try {
+			study = open(studyDir);
+		} catch (cause) {
+			// Moved, deleted or on a drive that isn't mounted: ask again.
+			console.error(`cannot open the study folder ${studyDir}:`, cause);
+		}
+	}
+	/** Routes that need the folder answer 409 until it is set. */
+	const withStudy =
+		<R extends Request>(
+			handle: (req: R, study: Study) => Response | Promise<Response>,
+		) =>
+		(req: R) =>
+			study
+				? handle(req, study)
+				: error(409, "no_folder", "choose the study folder first");
+
 	const server: Bun.Server<Socket> = Bun.serve({
 		hostname: HOST,
 		port,
@@ -39,42 +92,85 @@ export async function startServer({ port, distDir, driver }: ServerOptions) {
 		routes: {
 			...(distDir ? await clientRoutes(distDir) : {}),
 			"/api/state": {
-				GET: () => {
-					const list = sessions.list();
-					const courses = [...new Set(list.map((s) => s.course))].sort();
-					return Response.json({
-						courses,
-						sessions: list,
-					} satisfies StateResponse);
-				},
+				GET: () =>
+					Response.json(
+						(study
+							? {
+									folder: study.folder.root,
+									courses: study.sessions.courses(),
+									sessions: study.sessions.list(),
+								}
+							: {
+									folder: null,
+									courses: [],
+									sessions: [],
+								}) satisfies StateResponse,
+					),
+			},
+			"/api/folder": {
+				POST: (req) =>
+					withBody(req, SetFolderBody, (body) => {
+						if (study) {
+							return error(
+								409,
+								"folder_set",
+								"the study folder is already set",
+							);
+						}
+						const chosen = chooseStudyFolder(body.path);
+						if ("code" in chosen) {
+							return error(400, chosen.code, chosen.message);
+						}
+						const opened = open(chosen.dir);
+						try {
+							saveStudyDir?.(opened.folder.root);
+						} catch (cause) {
+							opened.unwatch();
+							throw cause;
+						}
+						study = opened;
+						return Response.json(
+							{ folder: study.folder.root },
+							{ status: 201 },
+						);
+					}),
 			},
 			"/api/sessions": {
-				POST: (req) =>
+				POST: withStudy((req, { sessions }) =>
 					withBody(req, CreateSessionBody, (body) =>
 						Response.json(
 							{ id: sessions.create(body).id } satisfies CreateSessionResponse,
 							{ status: 201 },
 						),
 					),
+				),
 			},
 			"/api/sessions/:id": {
-				GET: (req) => found(sessions.snapshot(req.params.id)),
+				GET: withStudy((req, { sessions }) =>
+					found(sessions.snapshot(req.params.id)),
+				),
+				PATCH: withStudy((req, { sessions }) =>
+					withBody(req, PatchSessionBody, (body) =>
+						found(sessions.update(req.params.id, body)),
+					),
+				),
 			},
 			"/api/sessions/:id/messages": {
-				POST: (req) =>
+				POST: withStudy((req, { sessions }) =>
 					withBody(req, SendMessageBody, (body) =>
 						found(sessions.send(req.params.id, body), 202),
 					),
+				),
 			},
 			"/api/sessions/:id/interrupt": {
-				POST: async (req) => {
+				POST: withStudy(async (req, { sessions }) => {
 					const interrupted = await sessions.interrupt(req.params.id);
 					return found(
 						interrupted === undefined
 							? undefined
 							: ({ interrupted } satisfies InterruptResponse),
 					);
-				},
+				}),
 			},
 			"/api/*": () => error(404, "not_found", "no such route"),
 			"/ws": (req, server) =>
@@ -86,6 +182,9 @@ export async function startServer({ port, distDir, driver }: ServerOptions) {
 			// A socket that falls this far behind is closed; its client re-subscribes.
 			backpressureLimit: 1024 * 1024,
 			closeOnBackpressureLimit: true,
+			open(ws) {
+				ws.subscribe(FOLDER_TOPIC);
+			},
 			message(ws, raw) {
 				const parsed = ClientMessage.safeParse(parseJson(String(raw)));
 				if (!parsed.success) {
@@ -97,7 +196,7 @@ export async function startServer({ port, distDir, driver }: ServerOptions) {
 				}
 				const { t, session } = parsed.data;
 				if (t === "unsub") return void ws.unsubscribe(topic(session));
-				const snapshot = sessions.snapshot(session);
+				const snapshot = study?.sessions.snapshot(session);
 				if (!snapshot) {
 					return send(ws, {
 						t: "error",
@@ -112,7 +211,21 @@ export async function startServer({ port, distDir, driver }: ServerOptions) {
 			},
 		},
 		fetch: () => new Response("Not found", { status: 404 }),
+		error(cause) {
+			if (cause instanceof BadRequest) {
+				return error(400, "bad_request", cause.message);
+			}
+			console.error(cause);
+			return error(500, "internal", String(cause));
+		},
 	});
+	const stop = server.stop.bind(server);
+	// Stopping the server also closes the watcher and the live agents.
+	server.stop = (closeActiveConnections?: boolean) => {
+		study?.unwatch();
+		study?.sessions.close();
+		return stop(closeActiveConnections);
+	};
 	return server;
 }
 

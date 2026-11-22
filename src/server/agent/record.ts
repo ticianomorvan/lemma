@@ -19,6 +19,7 @@ import {
 	type SDKMessage,
 	type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { Folder } from "../folder/folder.ts";
 import { sdkOptions } from "./sdk.ts";
 
 const KEPT = new Set(["stream_event", "assistant", "user", "result"]);
@@ -73,7 +74,7 @@ async function* input(): AsyncGenerator<SDKUserMessage> {
 
 const conversation = query({
 	prompt: input(),
-	options: sdkOptions(cwd, { sessionId: crypto.randomUUID() }),
+	options: sdkOptions(new Folder(cwd), { sessionId: crypto.randomUUID() }),
 });
 const lines: string[] = [];
 let deltas = 0;

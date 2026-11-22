@@ -30,6 +30,8 @@ bun run check    # typecheck, Biome, bun test, Playwright on the production buil
 
 Playwright needs Chromium once: `bunx playwright install chromium`.
 
+On first run Lemma asks for your study folder and remembers it in `~/Library/Application Support/lemma/config.json`. Each top-level folder in it is a course, and each session is a Markdown file in `<course>/sessions/`. `LEMMA_STUDY_DIR` overrides the folder for one run.
+
 ## Signing in to Claude
 
 Lemma never asks for, reads or stores your Claude credentials. It runs the official, unmodified Claude Code program, and you sign in to that yourself in one of two ways:

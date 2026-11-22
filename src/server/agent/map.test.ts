@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+import { Folder } from "../folder/folder.ts";
 import type { AgentEvent } from "./driver.ts";
 import { FakeDriver, loadStream } from "./fake.ts";
 import { SdkMapper } from "./map.ts";
@@ -96,7 +98,7 @@ test("FakeDriver cuts the stream on interrupt and replays a real interrupted res
 		streams: ["math"],
 		pace: (index) => (index === 5 ? held : undefined),
 	});
-	const agent = driver.start({ sessionId: "s" });
+	const agent = await driver.start({ folder: new Folder(tmpdir()) });
 	agent.push("hola");
 	const events: AgentEvent[] = [];
 	for await (const e of agent.events) {

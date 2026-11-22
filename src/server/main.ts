@@ -3,10 +3,13 @@ import { APP_NAME } from "../shared/app.ts";
 import type { AgentDriver } from "./agent/driver.ts";
 import { FakeDriver } from "./agent/fake.ts";
 import { SdkDriver } from "./agent/sdk.ts";
+import { readConfig, saveConfig } from "./config.ts";
 import { startServer } from "./http.ts";
 
 const production = process.env.NODE_ENV === "production";
-const port = parsePort(process.env.PORT ?? "4317");
+const config = readConfig();
+const port = parsePort(process.env.PORT ?? String(config.port ?? 4317));
+const override = process.env.LEMMA_STUDY_DIR;
 
 const server = await startServer({
 	port,
@@ -14,6 +17,9 @@ const server = await startServer({
 		? fileURLToPath(new URL("../../dist", import.meta.url))
 		: null,
 	driver: driver(),
+	studyDir: override ?? config.folder ?? null,
+	// With the override set, the screen never shows, so nothing is saved.
+	saveStudyDir: (folder) => saveConfig({ folder }),
 });
 console.log(
 	production
@@ -29,11 +35,7 @@ console.log(
  * `math-rich`. `LEMMA_FAKE_DELAY_MS` paces each SDK message (25 ms).
  */
 function driver(): AgentDriver {
-	if (process.env.LEMMA_FAKE !== "1") {
-		// The study folder arrives in step 3; until then the agent's read-only
-		// tools see this directory.
-		return new SdkDriver(process.env.LEMMA_STUDY_DIR ?? process.cwd());
-	}
+	if (process.env.LEMMA_FAKE !== "1") return new SdkDriver();
 	const delay = Number(process.env.LEMMA_FAKE_DELAY_MS ?? 25);
 	return new FakeDriver({
 		streams: ["math-rich"],
