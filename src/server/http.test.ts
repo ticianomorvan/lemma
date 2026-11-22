@@ -11,7 +11,10 @@ beforeAll(async () => {
 	dir = await mkdtemp(join(tmpdir(), "lemma-dist-"));
 	await writeFile(join(dir, "index.html"), "<title>shell</title>");
 	await writeFile(join(dir, "app-abc.js"), "console.log(1)");
-	server = await startServer({ port: 0, distDir: dir });
+	server = await startServer({
+		port: 0,
+		client: { mode: "prod", distDir: dir },
+	});
 });
 
 afterAll(async () => {
@@ -37,8 +40,16 @@ test("serves the shell for client routes", async () => {
 	}
 });
 
+test("answers 404, not the shell, for a missing asset", async () => {
+	const res = await fetch(new URL("/app-old.js", server.url));
+	expect(res.status).toBe(404);
+});
+
 test("refuses to start without a build", async () => {
-	expect(
-		startServer({ port: 0, distDir: join(dir, "missing") }),
+	await expect(
+		startServer({
+			port: 0,
+			client: { mode: "prod", distDir: join(dir, "missing") },
+		}),
 	).rejects.toThrow("bun run build");
 });
