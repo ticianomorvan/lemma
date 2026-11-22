@@ -33,7 +33,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 - **Imports.** Only `src/server/agent` imports the Agent SDK. Only `src/shared` is imported by both the server and the client.
 - **Tests run offline.** They use `FakeDriver`, which replays recorded SDK streams from `test/fixtures/streams/*.jsonl`.
   - Only `bun run test:live` (`LIVE=1`) calls Claude, using your own login.
-  - Record a new fixture when a step needs a new stream shape.
+  - Record a new fixture when a step needs a new stream shape: `bun run record:stream <name> "<prompt>" [--interrupt-after <deltas>]`. Read the diff before committing it.
 - **The proof runs on the production build:** `bun run build && bun run start`.
 - **CI** (GitHub Actions on macOS) runs `bun run check`: typecheck, Biome, `bun test` and Playwright.
 - **UI work** follows the `ui` skill (Emil Kowalski's guides) and is checked in a browser at desktop and phone widths, in light and dark mode.
