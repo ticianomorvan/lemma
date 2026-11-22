@@ -12,7 +12,11 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 |---|---|
 | `@anthropic-ai/claude-agent-sdk` | 0.3.330 |
 | `react` | 19.3.1 |
-| `katex` | 0.19.1 |
+| `katex` | 0.19.1 (forced with `overrides`: `rehype-katex` asks for 0.16) |
+| `react-markdown` | 10.1.0 |
+| `remark-math`, `rehype-katex` | 6.0.0, 7.0.1 |
+| `remark-gfm`, `remark-breaks` | 4.0.1, 4.0.0 |
+| `lucide-react` | 1.77.0 |
 | `zod` | 4.6.7 |
 | `mathjs` | 15.2.0 |
 | `react-pdf` | 11.1.0 |
@@ -60,6 +64,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 
 ### 2. Math chat (first usable build)
 - **What:** a client store fed by the WebSocket, a thread view, the composer (with stop), and `shared/normalizeMath`.
+- **Layout (chosen from three prototypes):** the notebook ("Cuaderno"): each exchange is a cell, the question a card, the answer full-width serif; the composer docked at the bottom with a floating stop pill; an index of questions in the right margin (a popover on narrow screens).
 - **Rendering:** Markdown through `react-markdown` + `remark-math` + `rehype-katex`, plus `copy-tex`. Punctuation after math is kept on the same line.
 - **Prompt:** the system-prompt append with the answer conventions and language rules.
 - **Proof:**

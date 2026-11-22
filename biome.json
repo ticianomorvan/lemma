@@ -7,7 +7,7 @@
 	},
 	"files": {
 		"ignoreUnknown": true,
-		"includes": ["**", "!prototype", "!docs"]
+		"includes": ["**", "!prototype", "!docs", "!src/shared/vendor"]
 	},
 	"formatter": {
 		"enabled": true,

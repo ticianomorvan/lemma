@@ -23,6 +23,11 @@ export type FakeDriverOptions = {
 	/** Fixture names; the driver's nth push replays `streams[n % streams.length]`. */
 	streams: string[];
 	/**
+	 * Picks the fixture for a push by its text instead; return undefined to
+	 * fall back to `streams`.
+	 */
+	pick?: (text: string) => string | undefined;
+	/**
 	 * Awaited before the message at `index` of each turn's stream is replayed.
 	 * Tests hold a turn mid-stream by returning a promise they resolve later.
 	 */
@@ -46,7 +51,7 @@ export class FakeDriver implements AgentDriver {
 
 	start(start: AgentStartOptions): AgentSession {
 		this.started.push(start);
-		const { streams, pace } = this.options;
+		const { streams, pace, pick } = this.options;
 		const interruptedResult = this.interruptedResult;
 		const pushed = this.pushed;
 		const turns = channel<{ turn: number; name: string }>();
@@ -78,7 +83,7 @@ export class FakeDriver implements AgentDriver {
 			push(text) {
 				const turn = pushed.push(text) - 1;
 				latest = turn;
-				const name = streams[turn % streams.length];
+				const name = pick?.(text) ?? streams[turn % streams.length];
 				if (name === undefined) throw new Error("FakeDriver has no streams");
 				turns.push({ turn, name });
 			},

@@ -12,7 +12,8 @@ export default defineConfig({
 	webServer: {
 		command: "bun run build && bun run start",
 		url: `http://127.0.0.1:${port}`,
-		env: { PORT: String(port) },
+		// Recorded streams instead of Claude; see `driver()` in src/server/main.ts.
+		env: { PORT: String(port), LEMMA_FAKE: "1", LEMMA_FAKE_DELAY_MS: "15" },
 		reuseExistingServer: false,
 	},
 });

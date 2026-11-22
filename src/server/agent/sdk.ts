@@ -12,6 +12,7 @@ import type {
 	AgentStartOptions,
 } from "./driver.ts";
 import { SdkMapper } from "./map.ts";
+import { CONVENTIONS } from "./prompt.ts";
 
 /**
  * Read-only until the folder module's path jail exists (step 3), which is
@@ -60,8 +61,15 @@ export function sdkOptions(
 		// Project settings only: loads the folder's `.claude/skills` and keeps
 		// the user's global hooks and MCP servers out.
 		settingSources: ["project"],
-		systemPrompt: { type: "preset", preset: "claude_code" },
+		systemPrompt: {
+			type: "preset",
+			preset: "claude_code",
+			append: CONVENTIONS,
+		},
 		includePartialMessages: true,
+		// Summaries stream as thinking deltas; without `display` they stream
+		// empty. The thread shows them folded under a "Pensando" row.
+		thinking: { type: "adaptive", display: "summarized" },
 		tools: TOOLS,
 		disallowedTools: ["Bash", "NotebookEdit", "Task"],
 		// Not `allowedTools`: a bare entry there approves the tool before this

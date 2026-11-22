@@ -8,6 +8,7 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/source-serif-4";
 @import "@fontsource-variable/source-serif-4/wght-italic.css";
+@import "katex/dist/katex.min.css";
 
 @custom-variant dark {
 	&:where(:root[data-theme="dark"], :root[data-theme="dark"] *) {
@@ -169,5 +170,233 @@
 	}
 	body {
 		@apply bg-background text-foreground;
+	}
+}
+
+/*
+ * An answer's rendered Markdown. Reading text is serif, like the material;
+ * the UI around it is sans.
+ */
+@layer components {
+	.answer {
+		/* KaTeX numbers `align` rows with a counter it resets on <body>; each
+		   answer block counts from (1) instead of across the whole thread. */
+		counter-reset: katexEqnNo mmlEqnNo;
+		font-family: var(--font-serif);
+		font-size: 15.5px;
+		line-height: 1.65;
+		overflow-wrap: break-word;
+	}
+	.answer > :first-child {
+		margin-top: 0;
+	}
+	.answer > :last-child {
+		margin-bottom: 0;
+	}
+	.answer :where(p, ul, ol, blockquote, table, pre, .math-pending) {
+		margin: 0 0 0.75em;
+	}
+	.answer :where(h1, h2, h3, h4) {
+		font-weight: 600;
+		line-height: 1.3;
+		margin: 1.2em 0 0.45em;
+	}
+	.answer h1 {
+		font-size: 1.3em;
+	}
+	.answer h2 {
+		font-size: 1.15em;
+	}
+	.answer :where(h3, h4) {
+		font-size: 1em;
+	}
+	.answer :where(ul, ol) {
+		padding-left: 1.4em;
+	}
+	.answer ul {
+		list-style: disc;
+	}
+	.answer ol {
+		list-style: decimal;
+	}
+	.answer li + li {
+		margin-top: 0.2em;
+	}
+	.answer a {
+		color: var(--primary);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.answer blockquote {
+		border-left: 2px solid var(--input);
+		padding-left: 0.9em;
+		color: var(--muted-foreground);
+	}
+	.answer :not(pre) > code {
+		font-family: ui-monospace, "SF Mono", Menlo, monospace;
+		font-size: 0.85em;
+		background: var(--secondary);
+		border-radius: 4px;
+		padding: 0.1em 0.3em;
+	}
+	.answer pre {
+		font:
+			13px / 1.55 ui-monospace,
+			"SF Mono",
+			Menlo,
+			monospace;
+		background: var(--paper);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 10px 12px;
+		overflow-x: auto;
+	}
+	.answer table {
+		display: block;
+		overflow-x: auto;
+		border-collapse: collapse;
+		font-size: 0.95em;
+	}
+	.answer :where(th, td) {
+		border: 1px solid var(--border);
+		padding: 4px 10px;
+		text-align: left;
+	}
+	.answer .katex {
+		font-size: 1.05em;
+	}
+	/* Wide formulas scroll on their own instead of widening the thread. */
+	.answer .katex-display {
+		margin: 0.8em 0 0.9em;
+		overflow-x: auto;
+		overflow-y: hidden;
+		/* Room for KaTeX's 2px spacer beside `align` row numbers, which
+		   would otherwise overflow and show a scrollbar. */
+		padding: 2px 4px;
+	}
+	/* The student's question: sans, like the UI, not the reading serif. */
+	.answer.question {
+		font-family: var(--font-sans);
+		font-size: 15px;
+		line-height: 1.55;
+	}
+	/* `$B$.` never wraps the period onto its own line (see markdown/glue.ts). */
+	.answer .math-glue {
+		white-space: nowrap;
+	}
+	/* A display formula still streaming in: its source, until `$$` closes it. */
+	.answer .math-pending {
+		margin: 0.8em 0 0.9em;
+		padding: 8px 12px;
+		border: 1px dashed var(--input);
+		border-radius: var(--radius);
+		font:
+			13px / 1.55 ui-monospace,
+			"SF Mono",
+			Menlo,
+			monospace;
+		color: var(--muted-foreground);
+		white-space: pre-wrap;
+	}
+	.answer .math-pending code {
+		font: inherit;
+		background: none;
+		padding: 0;
+	}
+}
+
+/* Thread motion. Streaming text itself never animates: it changes many times a second. */
+@layer components {
+	.collapsible-panel {
+		height: var(--collapsible-panel-height);
+		overflow: hidden;
+		transition: height 200ms var(--ease-out);
+	}
+	.collapsible-panel[data-starting-style],
+	.collapsible-panel[data-ending-style] {
+		height: 0;
+	}
+	/* A caret after the last line of the text that is streaming in. */
+	.answer[data-streaming] > :is(p, h1, h2, h3, h4):last-child::after,
+	.answer[data-streaming] > :is(ul, ol):last-child > li:last-child::after {
+		content: "";
+		display: inline-block;
+		width: 0.45em;
+		height: 1em;
+		margin-left: 2px;
+		vertical-align: -0.12em;
+		border-radius: 1px;
+		background: var(--primary);
+		animation: caret-blink 1s steps(2) infinite;
+	}
+	.waiting-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 999px;
+		background: var(--subtle);
+		animation: waiting 1s var(--ease-in-out) infinite;
+	}
+	.thinking-shimmer {
+		background:
+			linear-gradient(
+				90deg,
+				var(--subtle) 0%,
+				var(--foreground) 50%,
+				var(--subtle) 100%
+			)
+			0 0 / 200% 100%;
+		background-clip: text;
+		color: transparent;
+		animation: shimmer 1.6s linear infinite;
+	}
+	.turn-in {
+		animation: turn-in 220ms var(--ease-out);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.answer[data-streaming] > :is(p, h1, h2, h3, h4):last-child::after,
+		.answer[data-streaming] > :is(ul, ol):last-child > li:last-child::after,
+		.waiting-dot,
+		.thinking-shimmer {
+			animation: none;
+		}
+		.turn-in {
+			animation: fade-in 150ms ease;
+		}
+		.collapsible-panel {
+			transition: none;
+		}
+	}
+}
+
+@keyframes caret-blink {
+	50% {
+		opacity: 0;
+	}
+}
+@keyframes waiting {
+	0%,
+	100% {
+		opacity: 0.35;
+		transform: translateY(0);
+	}
+	50% {
+		opacity: 1;
+		transform: translateY(-2px);
+	}
+}
+@keyframes shimmer {
+	to {
+		background-position: -200% 0;
+	}
+}
+@keyframes turn-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+}
+@keyframes fade-in {
+	from {
+		opacity: 0;
 	}
 }

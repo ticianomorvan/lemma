@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-test("production build serves the placeholder page", async ({ page }) => {
+test("the production build opens a session at its own URL", async ({
+	page,
+}) => {
 	await page.goto("/");
 	await expect(page).toHaveTitle("Lemma");
-	await expect(page.getByRole("heading", { name: "Lemma" })).toBeVisible();
+	await expect(page).toHaveURL(/\/s\/[\w-]+$/);
+	await expect(page.getByText("¿Qué estudiamos hoy?")).toBeVisible();
 });
 
 test.describe("theme", () => {

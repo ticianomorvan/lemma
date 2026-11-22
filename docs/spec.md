@@ -75,11 +75,11 @@ study/
 
 **Rendering pipeline (the core of the app).**
 - **Math.** `react-markdown` + `remark-math` + `rehype-katex` (KaTeX 0.19.x), with a normalizer run on each streamed chunk first. The normalizer converts `\(…\)` / `\[…\]` to dollars and escapes currency dollars.
-- **Half-received math.** It stays as raw text until the closing delimiter arrives, with no error flash.
+- **Half-received math.** It stays as raw text until the closing delimiter arrives, with no error flash. An unclosed inline `$x` is already text to remark-math; an unclosed display formula (`$$`, `\[`, `\(`) shows its source in a dashed `math-pending` block. The same holds after the stream stops, so an answer interrupted mid-formula never shows a KaTeX error.
 - **Alternatives.** Vercel `streamdown` (with its math plugin) is the runner-up and is worth a spike if streaming jank shows up. Temml (MathML) is the fallback if KaTeX misses a construct the courses need.
 - **Rejected: MathJax 4.** It has the widest coverage, but its typesetting is asynchronous and slower, which suits re-rendering on every chunk badly.
 - **Copy.** The KaTeX `copy-tex` extension, so copying an equation yields its LaTeX.
-- **Punctuation after math.** Glue it to the math with `white-space: nowrap`, so `$B$.` never wraps the period onto its own line. The prototype hit this.
+- **Punctuation after math.** Glue it to the math with `white-space: nowrap`, so `$B$.` never wraps the period onto its own line. The prototype hit this. A rehype plugin (`client/markdown/glue.ts`) wraps inline math and touching punctuation, opening or closing, in `span.math-glue`.
 - **Prototype.** `prototype/workspace.html` has the three explored layouts (Split, Notebook, Margin). Decided: they become two views of one session, Read (Margin plus an openable chat panel, which is Split) and Practice (Notebook). See `architecture.md` → Views.
 - **Fenced blocks Claude may emit.** Each block kind has one renderer. All of them are declarative data, and none of them runs code Claude wrote.
 
