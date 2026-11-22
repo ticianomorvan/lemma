@@ -4,8 +4,7 @@
  * it saves a session once a turn reaches its `result`.
  */
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { StateResponse } from "../shared/protocol.ts";
 import { FakeDriver } from "./agent/fake.ts";
@@ -87,8 +86,11 @@ test("after a restart the session resumes: same SDK session, history intact", as
 	await ask(second.api, first.id, "dos");
 	await turnEnds(1)(b);
 	expect(first.driver.started).toHaveLength(2);
-	expect(first.driver.started[1]).toMatchObject({ sdkSessionId, resume: true });
-	expect(first.driver.started[1]?.seed).toBeUndefined();
+	expect(first.driver.started[1]).toMatchObject({
+		sdkSessionId,
+		resumed: true,
+	});
+	// The driver resumed, so the seed it was offered goes unused.
 	const file = await sessionFile(first.dir, second.api);
 	const { meta, entries } = parse(await file.md());
 	expect(meta.sdk_session_id).toBe(sdkSessionId);
@@ -130,7 +132,7 @@ test("a hand-edited transcript makes the next send reseed instead of resume", as
 	await turnEnds(1)(b);
 
 	const [, started] = first.driver.started;
-	expect(started?.resume).toBe(false);
+	expect(started?.resumed).toBe(false);
 	expect(started?.sdkSessionId).not.toBe(first.driver.started[0]?.sdkSessionId);
 	expect(started?.seed).toContain("uno (corregido a mano)");
 	expect(started?.seed).not.toContain("dos");
@@ -154,7 +156,7 @@ test("an SDK session that is gone (cache cleaned, or never saved) is reseeded", 
 	const b = await Client.subscribe(second.server, first.id);
 	await ask(second.api, first.id, "dos");
 	await turnEnds(1)(b);
-	expect(second.driver.started[0]).toMatchObject({ resume: false });
+	expect(second.driver.started[0]).toMatchObject({ resumed: false });
 	expect(second.driver.started[0]?.seed).toContain("## Tú\n\nuno");
 });
 
@@ -183,7 +185,7 @@ test("an edit while the server runs reloads the thread and reseeds the live agen
 			m.seq > client.snapshot.seq + 3,
 	);
 	expect(driver.started).toHaveLength(2);
-	expect(driver.started[1]).toMatchObject({ resume: false });
+	expect(driver.started[1]).toMatchObject({ resumed: false });
 	expect(driver.started[1]?.seed).toContain("Una línea agregada.");
 	// And the edit is still there, with the new turn after it.
 	const { entries } = parse(await readFile(path, "utf8"));
@@ -227,7 +229,7 @@ test("an idle agent is closed, and the next send resumes it", async () => {
 	expect(driver.started).toHaveLength(2);
 	expect(driver.started[1]).toMatchObject({
 		sdkSessionId: driver.started[0]?.sdkSessionId,
-		resume: true,
+		resumed: true,
 	});
 });
 
@@ -330,15 +332,106 @@ test("first run: no folder until one is chosen, then it is saved", async () => {
 	}
 });
 
-test("config.json keeps the chosen folder", async () => {
-	const { readConfig, saveConfig } = await import("./config.ts");
-	const dir = await mkdtemp(join(tmpdir(), "lemma-config-"));
+test("a message sent mid-turn is written after the running turn's answer", async () => {
+	const gate = hold(3);
+	const first = await serve({ streams: ["math"], pace: gate.pace });
+	const a = await Client.subscribe(first.server, first.id);
+	await ask(first.api, first.id, "A");
+	await gate.arrived;
+	await ask(first.api, first.id, "B");
+	gate.release();
+	await turnEnds(2)(a);
+	const { path } = await sessionFile(first.dir, first.api);
+	const { entries } = parse(await readFile(path, "utf8"));
+	expect(entries.map((e) => (e.kind === "user" ? e.text : e.kind))).toEqual([
+		"A",
+		"answer",
+		"B",
+		"answer",
+	]);
+	await first.server.stop(true);
+
+	// After a restart each answer is still under its own question.
+	const second = await serve(
+		{ streams: [] },
+		{ driver: first.driver, studyDir: first.dir, create: false },
+	);
+	const b = await Client.subscribe(second.server, first.id);
+	expect(b.snapshot.turns.map((t) => t.user.text)).toEqual(["A", "B"]);
+	expect(b.snapshot.turns.map((t) => t.end?.reason)).toEqual([
+		"completed",
+		"completed",
+	]);
+});
+
+test("Stop pressed while the agent is still starting interrupts the turn", async () => {
+	let release = () => {};
+	class SlowStart extends FakeDriver {
+		override async has(id: string) {
+			await new Promise<void>((resolve) => (release = resolve));
+			return super.has(id);
+		}
+	}
+	const driver = new SlowStart({ streams: ["math"] });
+	const first = await serve({ streams: [] }, { driver });
+	const a = await Client.subscribe(first.server, first.id);
+	await ask(first.api, first.id, "uno");
+	await turnEnds(1)(a);
+	await first.server.stop(true);
+
+	// After a restart the first send asks whether it can resume: hold that.
+	const second = await serve(
+		{ streams: [] },
+		{ driver, studyDir: first.dir, create: false },
+	);
+	const b = await Client.subscribe(second.server, first.id);
+	await ask(second.api, first.id, "dos");
+	await b.untilEvent((e) => e.type === "turn_start");
+	const res = await second.api(`/api/sessions/${first.id}/interrupt`, {});
+	expect(await res.json()).toEqual({ interrupted: true });
+	release();
+	await turnEnds(1)(b);
+	expect(b.view().turns.at(-1)?.end?.reason).toBe("interrupted");
+});
+
+test("a saved folder that is gone brings back the first-run screen", async () => {
+	const server = await startServer({
+		port: 0,
+		distDir: null,
+		driver: new FakeDriver({ streams: [] }),
+		studyDir: join(await studyDir(), "ya-no-existe"),
+	});
 	try {
-		expect(readConfig(dir)).toEqual({});
-		saveConfig({ folder: "/Users/x/Estudio" }, dir);
-		saveConfig({ port: 4400 }, dir);
-		expect(readConfig(dir)).toEqual({ folder: "/Users/x/Estudio", port: 4400 });
+		const state = await (await fetch(new URL("/api/state", server.url))).json();
+		expect(state.folder).toBeNull();
 	} finally {
-		await rm(dir, { recursive: true });
+		await server.stop(true);
+	}
+});
+
+test("the first-run screen refuses folders that would give Claude too much", async () => {
+	const server = await startServer({
+		port: 0,
+		distDir: null,
+		driver: new FakeDriver({ streams: [] }),
+		studyDir: null,
+	});
+	try {
+		for (const path of [
+			"/Users",
+			"~/.ssh",
+			"~/Library/Estudio",
+			"~/x/.oculta",
+		]) {
+			const res = await fetch(new URL("/api/folder", server.url), {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ path }),
+			});
+			expect(res.status).toBe(400);
+			expect((await res.json()).error.code).toBe("too_broad");
+		}
+	} finally {
+		await server.stop(true);
 	}
 });

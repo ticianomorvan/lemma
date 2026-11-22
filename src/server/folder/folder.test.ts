@@ -63,6 +63,20 @@ test("a symlink pointing outside the folder is rejected", () => {
 	);
 });
 
+test("a dangling symlink is rejected: a write would follow it out", async () => {
+	await symlink(join(outside, "nuevo.md"), join(root, "colgado.md"));
+	expect(folder.resolve("colgado.md")).toBeNull();
+	expect(folder.resolve("colgado.md/x")).toBeNull();
+	expect(write("colgado.md")).toContain("outside");
+});
+
+test("`~` paths, which the tools expand to the home folder, are rejected", () => {
+	expect(checkTool(folder, "Read", { file_path: "~/.ssh/id_rsa" })).toContain(
+		"outside",
+	);
+	expect(write("~/.zshrc")).toContain("outside");
+});
+
 test("`..` and absolute paths elsewhere are rejected", () => {
 	expect(folder.resolve("../x")).toBeNull();
 	expect(folder.resolve("probabilidad/../../x")).toBeNull();

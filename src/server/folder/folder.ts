@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import {
 	type FSWatcher,
+	lstatSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
@@ -63,6 +64,9 @@ export class Folder {
 				const real = join(realpathSync.native(existing), ...missing.reverse());
 				return this.contains(real) ? real : null;
 			} catch {
+				// A link whose target is missing would be followed on write,
+				// wherever it points: refuse it.
+				if (isLink(existing)) return null;
 				const parent = dirname(existing);
 				if (parent === existing) return null;
 				missing.push(basename(existing));
@@ -149,6 +153,11 @@ export class Folder {
 				);
 			},
 		);
+		// The folder vanished (an ejected drive, say): stop watching, keep serving.
+		watcher.on("error", (error) => {
+			console.error(`stopped watching ${this.root}:`, error);
+			watcher.close();
+		});
 		return () => {
 			watcher.close();
 			for (const timer of pending.values()) clearTimeout(timer);
@@ -179,6 +188,14 @@ export class Folder {
 export class OutsideFolderError extends Error {
 	constructor(path: string) {
 		super(`${path} is outside the study folder`);
+	}
+}
+
+function isLink(path: string) {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
 	}
 }
 

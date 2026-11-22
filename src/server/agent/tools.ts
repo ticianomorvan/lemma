@@ -5,6 +5,7 @@
  * hook is what makes the jail hold for every call.
  */
 import type { Folder } from "../folder/folder.ts";
+import { writeDenied } from "../folder/layout.ts";
 
 /** The agent's tools. `Bash`, `NotebookEdit` and `Task` are also disallowed. */
 export const TOOLS = ["Read", "Glob", "Grep", "Write", "Edit"];
@@ -22,6 +23,9 @@ export function checkTool(
 	);
 	if (WRITES.has(name) && paths.length === 0) return "a file_path is required";
 	for (const path of paths) {
+		// The tools expand `~` to the home folder; the jail would read it as a
+		// folder named `~` inside the root.
+		if (path.startsWith("~")) return `${path} is outside the study folder`;
 		const real = folder.resolve(path);
 		if (real === null) return `${path} is outside the study folder`;
 		if (WRITES.has(name)) {
@@ -37,24 +41,6 @@ export function checkTool(
 		(glob.startsWith("/") || glob.split("/").includes(".."))
 	) {
 		return "globs must stay inside the study folder";
-	}
-	return null;
-}
-
-/**
- * Claude may write anywhere in the folder except over what the app owns: the
- * transcripts, the phone inbox, and `.claude/` settings (skills are fine).
- */
-export function writeDenied(relative: string): string | null {
-	if (relative === "") return "cannot write the study folder itself";
-	// Lowercased: macOS folders are case-insensitive, so SESSIONS/ is sessions/.
-	const [top, second] = relative.toLowerCase().split("/");
-	if (top === ".claude" && second !== "skills") {
-		return "writes under .claude/ are limited to .claude/skills/";
-	}
-	if (top === "inbox") return "inbox/ is managed by Lemma";
-	if (second === "sessions" || top === "sessions") {
-		return "session transcripts are managed by Lemma";
 	}
 	return null;
 }

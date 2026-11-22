@@ -19,22 +19,29 @@ import { checkTool, TOOLS } from "./tools.ts";
 
 /** Runs Claude with the Agent SDK: one streaming `query()` per session. */
 export class SdkDriver implements AgentDriver {
-	start({
+	async start({
 		folder,
-		sdkSessionId,
-		resume,
+		resumeId,
 		seed,
-	}: AgentStartOptions): AgentSession {
+	}: AgentStartOptions): Promise<AgentSession> {
+		const resumed =
+			resumeId !== undefined &&
+			(await getSessionInfo(resumeId, { dir: folder.root }).catch(
+				() => undefined,
+			)) !== undefined;
+		const sdkSessionId = resumed ? resumeId : crypto.randomUUID();
 		const input = channel<SDKUserMessage>();
 		const conversation = query({
 			prompt: input,
 			options: sdkOptions(
 				folder,
-				resume ? { resume: sdkSessionId } : { sessionId: sdkSessionId },
+				resumed ? { resume: sdkSessionId } : { sessionId: sdkSessionId },
 			),
 		});
-		let pending = resume ? undefined : seed;
+		let pending = resumed ? undefined : seed;
 		return {
+			sdkSessionId,
+			resumed,
 			push(text) {
 				// The seed goes with the first message, so it is part of the saved
 				// history a later resume brings back (a system prompt wouldn't be).
@@ -60,11 +67,6 @@ export class SdkDriver implements AgentDriver {
 			},
 			events: mapStream(conversation),
 		};
-	}
-
-	async canResume(sdkSessionId: string, folder: Folder) {
-		const info = await getSessionInfo(sdkSessionId, { dir: folder.root });
-		return info !== undefined;
 	}
 }
 

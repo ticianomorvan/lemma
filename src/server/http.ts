@@ -1,6 +1,4 @@
-import { mkdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { extname, isAbsolute, join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { type ZodType, z } from "zod";
 import {
 	ClientMessage,
@@ -15,7 +13,7 @@ import {
 	type StateResponse,
 } from "../shared/protocol.ts";
 import type { AgentDriver } from "./agent/driver.ts";
-import { expandHome } from "./config.ts";
+import { chooseStudyFolder } from "./config.ts";
 import { Folder } from "./folder/folder.ts";
 import { BadRequest, Sessions, topic } from "./sessions.ts";
 
@@ -68,7 +66,15 @@ export async function startServer({
 		});
 		return { folder, sessions, unwatch };
 	};
-	let study: Study | null = studyDir ? open(studyDir) : null;
+	let study: Study | null = null;
+	if (studyDir) {
+		try {
+			study = open(studyDir);
+		} catch (cause) {
+			// Moved, deleted or on a drive that isn't mounted: ask again.
+			console.error(`cannot open the study folder ${studyDir}:`, cause);
+		}
+	}
 	/** Routes that need the folder answer 409 until it is set. */
 	const withStudy =
 		<R extends Request>(
@@ -111,10 +117,18 @@ export async function startServer({
 								"the study folder is already set",
 							);
 						}
-						const dir = studyFolder(body.path);
-						if (typeof dir !== "string") return dir;
-						study = open(dir);
-						saveStudyDir?.(study.folder.root);
+						const chosen = chooseStudyFolder(body.path);
+						if ("code" in chosen) {
+							return error(400, chosen.code, chosen.message);
+						}
+						const opened = open(chosen.dir);
+						try {
+							saveStudyDir?.(opened.folder.root);
+						} catch (cause) {
+							opened.unwatch();
+							throw cause;
+						}
+						study = opened;
 						return Response.json(
 							{ folder: study.folder.root },
 							{ status: 201 },
@@ -213,29 +227,6 @@ export async function startServer({
 		return stop(closeActiveConnections);
 	};
 	return server;
-}
-
-/**
- * The folder a first-run path names, made if it doesn't exist, or an error
- * response. The home folder itself and `/` are refused: Claude could then read
- * everything in them.
- */
-function studyFolder(input: string): string | Response {
-	const path = expandHome(input.trim());
-	if (!isAbsolute(path)) {
-		return error(400, "bad_request", "use a full path, like ~/Estudio");
-	}
-	const dir = resolve(path);
-	if (dir === "/" || dir === resolve(homedir())) {
-		return error(400, "too_broad", "choose a folder inside your home folder");
-	}
-	try {
-		mkdirSync(dir, { recursive: true });
-		if (!statSync(dir).isDirectory()) throw new Error("not a folder");
-	} catch {
-		return error(400, "not_a_folder", "that path is not a folder you can use");
-	}
-	return dir;
 }
 
 function send(ws: Bun.ServerWebSocket<Socket>, message: ServerMessage) {

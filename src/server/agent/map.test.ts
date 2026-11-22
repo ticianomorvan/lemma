@@ -98,11 +98,7 @@ test("FakeDriver cuts the stream on interrupt and replays a real interrupted res
 		streams: ["math"],
 		pace: (index) => (index === 5 ? held : undefined),
 	});
-	const agent = driver.start({
-		folder: new Folder(tmpdir()),
-		sdkSessionId: "s",
-		resume: false,
-	});
+	const agent = await driver.start({ folder: new Folder(tmpdir()) });
 	agent.push("hola");
 	const events: AgentEvent[] = [];
 	for await (const e of agent.events) {

@@ -103,7 +103,9 @@ test("two clients on one session see the same thread", async ({
 	const other = await browser.newPage();
 	await other.goto(`/s/${id}`);
 	await ask(page, "Hola desde el primero");
-	await expect(other.getByText("Hola desde el primero")).toBeVisible();
+	await expect(
+		other.getByText("Hola desde el primero", { exact: true }),
+	).toBeVisible();
 	await expect(other.getByText("Respondiendo")).toBeVisible();
 	await expect(stop(page)).toBeHidden({ timeout: 20_000 });
 	await expect(other.getByText("Respondiendo")).toBeHidden();

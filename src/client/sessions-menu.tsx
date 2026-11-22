@@ -25,7 +25,8 @@ export function SessionsMenu({
 	label: string;
 	loadState: () => Promise<StateResponse>;
 	onOpen: (id: string) => void;
-	onCreate: (course: string) => void;
+	/** Resolves false when the server refused the course name. */
+	onCreate: (course: string) => Promise<boolean>;
 }) {
 	const [open, setOpen] = useState(false);
 	const [state, setState] = useState<StateResponse>();
@@ -38,9 +39,18 @@ export function SessionsMenu({
 		groups.get(s.course)?.push(s);
 	}
 
+	const [error, setError] = useState<string>();
+
 	const close = (then: () => void) => {
 		setOpen(false);
 		then();
+	};
+	const create = async (name: string) => {
+		setError(undefined);
+		if (await onCreate(name)) return setOpen(false);
+		setError(
+			`No se pudo crear «${name}». Usá un nombre sin «/» ni «:», que no empiece con punto y que no sea «inbox».`,
+		);
 	};
 
 	return (
@@ -48,6 +58,7 @@ export function SessionsMenu({
 			open={open}
 			onOpenChange={(next) => {
 				setOpen(next);
+				setError(undefined);
 				if (next) void loadState().then(setState, () => {});
 			}}
 		>
@@ -79,7 +90,7 @@ export function SessionsMenu({
 							<button
 								type="button"
 								aria-label={`Nueva sesión en ${name}`}
-								onClick={() => close(() => onCreate(name))}
+								onClick={() => void create(name)}
 								className="grid size-6 place-items-center rounded-md text-muted-foreground transition-[transform,color,background-color] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.94]"
 							>
 								<Plus aria-hidden className="size-3.5" />
@@ -127,8 +138,7 @@ export function SessionsMenu({
 					onSubmit={(e) => {
 						e.preventDefault();
 						const name = course.trim();
-						if (name) close(() => onCreate(name));
-						setCourse("");
+						if (name) void create(name).then(() => setCourse(""));
 					}}
 				>
 					<Input
@@ -146,6 +156,11 @@ export function SessionsMenu({
 						Crear
 					</button>
 				</form>
+				{error && (
+					<p role="alert" className="px-2 pb-1.5 text-[13px] text-destructive">
+						{error}
+					</p>
+				)}
 			</PopoverContent>
 		</Popover>
 	);

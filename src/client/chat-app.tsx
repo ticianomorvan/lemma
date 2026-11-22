@@ -67,8 +67,11 @@ export function ChatApp() {
 
 	const start = (course: string) =>
 		createSession(course).then(
-			(created) => open(created, setId, "push"),
-			() => {},
+			(created) => {
+				open(created, setId, "push");
+				return true;
+			},
+			() => false,
 		);
 
 	if (screen === "setup") return <FolderSetup onDone={retry} />;
@@ -93,7 +96,7 @@ export function ChatApp() {
 				<span className="flex-1" />
 				<button
 					type="button"
-					onClick={() => start(meta?.course ?? FIRST_COURSE)}
+					onClick={() => void start(meta?.course ?? FIRST_COURSE)}
 					className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-[13px] text-muted-foreground transition-[transform,color,border-color] duration-150 ease-out active:scale-[0.97] hover:border-input hover:text-foreground"
 				>
 					<SquarePen aria-hidden className="size-3.5" />

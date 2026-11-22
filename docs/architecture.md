@@ -33,7 +33,7 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 | `folder` | all I/O under the study root: path jail (`realpath`), atomic writes, recursive `fs.watch` (150 ms debounce, our own writes ignored by content hash) | `resolve` (the jail), `read`, `writeAtomic`, `list`, `watch`; `saveAttachment` in step 10 |
 | `transcript` | Markdown session file ⇄ typed entries (question, answer, note) | `parse(md) → {meta, entries}`, `appendEntry(transcript, entry)`, `read`/`write`, `bodyHash(body)` |
 | `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
-| `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({folder, sdkSessionId, resume, seed?}) → {push, interrupt, close, events}`, `canResume(sdkSessionId, folder)` |
+| `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({folder, resumeId?, seed?}) → Promise<{sdkSessionId, resumed, push, interrupt, close, events}>`: it resumes `resumeId` if the SDK still has it, else starts fresh with the seed |
 | `tools/calc` | in-process MCP server (`createSdkMcpServer`, `tool()`), mathjs + distributions in a Worker | `calc(expr) → value \| error` |
 | `shared` | zod protocol schemas, the event reducer, `normalize-math` (`\(…\)`/`\[…\]` to dollars and escaping currency, after assistant-ui's heuristics, outside code; plus holding an unclosed display formula as raw source) | imported by server and client, so both reduce events identically |
 | `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store (`client/store.ts`); the thread view and composer in `client/thread/`; Markdown + KaTeX in `client/markdown/` | — |
@@ -59,13 +59,13 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
    - `canUseTool`, the path jail.
 3. **Stream.** SDK messages are mapped to our own events. Raw SDK messages never reach clients, so an SDK update can't break the protocol.
 4. **Write the transcript.**
-   - The user message is appended when it is accepted. Every append reads the file from disk first.
+   - The user message is appended when its turn starts (not when it is queued), so each answer follows its own question even when messages queue up. Queued messages a crash loses were never answered. Every append reads the file from disk first.
    - The assistant turn is appended at `turn_end`, with an atomic write.
    - The transcript is append-only and earlier turns are never rewritten. If the file changed on disk during a turn, the server re-reads it and appends to that version, so the user's edit survives.
 5. **Interrupt.** `Query.interrupt()`. The partial answer is appended under `## Claude *(interrumpida)*` (Spanish, like the rest of the file a person reads). An answer cut by an error gets `*(error)*`.
-6. **Resume.** When a session's agent starts, the server uses `resume: sdk_session_id` only when the SDK session still exists (`getSessionInfo(id, {dir: root})`) *and* `sdk_body_hash` matches the body. Otherwise it starts a fresh SDK session with a new random id, seeded with the transcript, and records that id.
-   - Both front-matter fields are written together when a turn ends with the agent alive, so a crash mid-turn (or before the SDK saved anything) leaves a hash that no longer matches, and the next start reseeds.
-   - The server notices an outside edit when the body on disk differs from what it last wrote. A live agent is then closed before the next turn and a fresh one is seeded, and an idle session reloads its thread from the file and pushes a new snapshot.
+6. **Resume.** When a session's agent starts, it gets `resumeId: sdk_session_id` only if `sdk_body_hash` matches the body just before the new question; the driver then resumes only if the SDK still has that session (`getSessionInfo(id, {dir: root})`). Otherwise it starts a fresh SDK session with a new random id, seeded with the transcript, and the next turn end records that id.
+   - The server keeps one hash per live agent: the body as that agent knows it. Both front-matter fields are written when a turn ends and the file still matches that hash, so a crash mid-turn (or before the SDK saved anything) or an edit during the turn leaves a hash that no longer matches, and the next start reseeds.
+   - An outside edit between turns no longer matches the live agent's hash either: the agent is closed before the next turn and a fresh one is seeded. An idle session also reloads its thread from the file and pushes a new snapshot.
    - The seed is sent as a text block before the first message, not in the system prompt, so it is part of the saved history a later resume brings back.
 7. **Idle.** An agent idle for 10 minutes is closed. Its session stays loaded, and the next send resumes the SDK session.
 

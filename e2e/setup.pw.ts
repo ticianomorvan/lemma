@@ -1,5 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdtemp, readFile, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { setupPort } from "../playwright.config.ts";
 
@@ -16,7 +17,11 @@ test("first run asks for the study folder, then opens a session in it", async ({
 	await page.getByRole("button", { name: "Usar esta carpeta" }).click();
 	await expect(page.getByRole("alert")).toHaveText(/ruta completa/);
 
-	const folder = resolve(".e2e/setup/Estudio");
+	// Not under .e2e/: hidden folders are refused.
+	const folder = join(
+		await realpath(await mkdtemp(join(tmpdir(), "lemma-setup-"))),
+		"Estudio",
+	);
 	await box.fill(folder);
 	await page.getByRole("button", { name: "Usar esta carpeta" }).click();
 	await expect(page).toHaveURL(/\/s\/[\w-]+$/);

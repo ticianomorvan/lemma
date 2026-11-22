@@ -5,7 +5,7 @@
  * runs one agent turn at a time, and publishes every event to the topic
  * `s:<id>` with a gapless `seq`.
  *
- * - The transcript gets the user message when it is accepted and the answer
+ * - The transcript gets the question when its turn starts and the answer
  *   when its turn ends, each appended to the file as it is on disk then.
  * - An agent starts on the first send. It resumes the SDK session named in the
  *   front matter only when the SDK still has it and the body hash matches;
@@ -29,12 +29,11 @@ import type {
 import { apply, emptyView } from "../shared/reducer.ts";
 import type { AgentDriver, AgentSession } from "./agent/driver.ts";
 import type { Folder, FolderChange } from "./folder/folder.ts";
+import { isCourse, isCourseName, sessionsDir } from "./folder/layout.ts";
 import {
 	appendEntry,
 	bodyHash,
-	type Entry,
 	format,
-	formatEntry,
 	parseBody,
 	read,
 	split,
@@ -59,24 +58,21 @@ type LiveSession = {
 	view: SessionView;
 	/** The seq of the last event published. */
 	seq: number;
-	/** `bodyHash` of the body as we last read or wrote it. */
-	known: string;
-	/** The file changed under us since: the next agent starts fresh. */
-	edited: boolean;
-	/** The SDK session to try to resume when the next agent starts. */
-	resumable?: string;
 	agent?: AgentSession;
-	/** The SDK session the live agent runs in. */
-	sdkSessionId?: string;
+	/**
+	 * `bodyHash` of the transcript as the live agent knows it. A file that no
+	 * longer matches was edited under it, and the next turn starts over.
+	 */
+	agentHash?: string;
 	/** An interrupt the agent hasn't acknowledged yet. */
 	interrupting?: Promise<void>;
+	/** A turn stopped before its agent existed; interrupted once it does. */
+	cancel?: string;
 	idle?: ReturnType<typeof setTimeout>;
 };
 
 const NO_USAGE = { inputTokens: 0, outputTokens: 0 };
 const IDLE_MS = 10 * 60 * 1000;
-/** Top-level folders that are not courses. */
-const NOT_COURSES = new Set(["inbox"]);
 
 export const topic = (id: string) => `s:${id}`;
 
@@ -102,7 +98,7 @@ export class Sessions {
 	courses(): string[] {
 		return this.folder
 			.list()
-			.filter((e) => e.dir && !NOT_COURSES.has(e.name))
+			.filter((e) => e.dir && isCourse(e.name))
 			.map((e) => e.name);
 	}
 
@@ -111,9 +107,16 @@ export class Sessions {
 		const sessions: SessionSummary[] = [];
 		this.paths.clear();
 		for (const course of this.courses()) {
-			for (const file of this.folder.list(`${course}/sessions`)) {
+			let files: ReturnType<Folder["list"]>;
+			try {
+				files = this.folder.list(sessionsDir(course));
+			} catch {
+				// `sessions` is a file, unreadable, or a link out of the folder.
+				continue;
+			}
+			for (const file of files) {
 				if (file.dir || !file.name.endsWith(".md")) continue;
-				const path = `${course}/sessions/${file.name}`;
+				const path = `${sessionsDir(course)}/${file.name}`;
 				try {
 					const { meta } = split(this.folder.read(path));
 					if (this.paths.has(meta.id)) continue;
@@ -157,17 +160,9 @@ export class Sessions {
 		if (!s) return undefined;
 		const turnId = crypto.randomUUID();
 		const queued = s.view.status === "running" || s.view.queue.length > 0;
-		const meta = s.view.meta.title ? {} : { title: titleFrom(body.text) };
-		this.record(
-			s,
-			{
-				kind: "user",
-				text: body.text,
-				...(body.anchor === undefined ? {} : { anchor: body.anchor }),
-			},
-			meta,
-		);
-		if (meta.title) this.emitMeta(id, s, meta);
+		// The question itself is written when its turn starts, so each answer
+		// follows its own question in the file even when messages queue up.
+		if (!s.view.meta.title) this.update(id, { title: titleFrom(body.text) });
 		this.emit(id, s, {
 			type: "user_message",
 			turnId,
@@ -189,7 +184,7 @@ export class Sessions {
 		const patch: Partial<TranscriptMeta> = {};
 		if (body.title !== undefined) patch.title = body.title.trim();
 		if (body.mode !== undefined) patch.mode = body.mode ?? undefined;
-		const current = this.current(s);
+		const current = read(this.folder, s.path);
 		write(this.folder, s.path, {
 			meta: { ...current.meta, ...patch },
 			body: current.body,
@@ -202,7 +197,12 @@ export class Sessions {
 	async interrupt(id: string): Promise<boolean | undefined> {
 		const s = this.load(id);
 		if (!s) return undefined;
-		if (!s.view.inflight || !s.agent) return false;
+		if (!s.view.inflight) return false;
+		if (!s.agent) {
+			// Its agent is still starting: interrupt as soon as it exists.
+			s.cancel = s.view.inflight.id;
+			return true;
+		}
 		// `next` waits for this before pushing, so an interrupt that races the
 		// turn's end can't land on the next queued turn.
 		const pending = s.agent.interrupt().catch(() => {});
@@ -214,34 +214,26 @@ export class Sessions {
 
 	/**
 	 * A file changed outside the app. An idle session whose transcript it is
-	 * reloads from disk and pushes the new snapshot to its clients.
+	 * reloads from disk and pushes the new snapshot to its clients. (Its agent
+	 * notices the edit by hash when the next turn starts.)
 	 */
 	changed({ path }: FolderChange) {
 		for (const [id, s] of this.live) {
 			if (s.path !== path || s.view.inflight || s.view.queue.length > 0) {
 				continue;
 			}
-			let transcript: Transcript;
 			try {
-				transcript = read(this.folder, path);
+				s.view = viewOf(read(this.folder, path), id);
 			} catch {
 				continue;
 			}
-			const hash = bodyHash(transcript.body);
-			if (hash === s.known) continue;
-			s.edited = true;
-			s.known = hash;
-			s.view = viewOf(transcript, s.view.meta.id);
 			s.seq += 1;
 			this.publish(topic(id), this.snapshotOf(id, s));
 		}
 	}
 
 	close() {
-		for (const s of this.live.values()) {
-			clearTimeout(s.idle);
-			s.agent?.close();
-		}
+		for (const s of this.live.values()) this.stop(s);
 		this.live.clear();
 	}
 
@@ -251,73 +243,74 @@ export class Sessions {
 		if (!this.paths.has(id)) this.list();
 		const path = this.paths.get(id);
 		if (!path) return undefined;
-		let transcript: Transcript;
+		let view: SessionView;
 		try {
-			transcript = read(this.folder, path);
+			view = viewOf(read(this.folder, path), id);
 		} catch {
 			return undefined;
 		}
-		const { meta, body } = transcript;
-		const known = bodyHash(body);
-		const s: LiveSession = {
-			path,
-			view: viewOf(transcript, id),
-			seq: 0,
-			known,
-			edited: false,
-			...(meta.sdk_session_id && meta.sdk_body_hash === known
-				? { resumable: meta.sdk_session_id }
-				: {}),
-		};
+		const s: LiveSession = { path, view, seq: 0 };
 		this.live.set(id, s);
 		return s;
 	}
 
-	/** The file now, noting whether it changed since we last saw it. */
-	private current(s: LiveSession): Transcript {
-		const transcript = read(this.folder, s.path);
-		if (bodyHash(transcript.body) !== s.known) s.edited = true;
-		return transcript;
-	}
-
-	/** Appends an entry to the transcript as it is on disk now. */
-	private record(
-		s: LiveSession,
-		entry: Entry,
-		meta:
-			| Partial<TranscriptMeta>
-			| ((next: Transcript) => Partial<TranscriptMeta>) = {},
-	) {
-		const next = appendEntry(this.current(s), entry);
-		const patch = typeof meta === "function" ? meta(next) : meta;
-		write(this.folder, s.path, { ...next, meta: { ...next.meta, ...patch } });
-		s.known = bodyHash(next.body);
-	}
-
-	/** Starts the next queued turn if the agent is free. */
+	/**
+	 * Starts the next queued turn if the agent is free. Its question is
+	 * appended to the file as it is on disk now; what that file looked like
+	 * just before decides how the agent continues:
+	 * - a live agent whose hash no longer matches is closed (the file was edited);
+	 * - a new agent may resume the SDK session in the front matter only if
+	 *   `sdk_body_hash` matches the body; otherwise it is seeded with the body.
+	 */
 	private next(id: string, s: LiveSession) {
 		const user = s.view.queue[0];
 		if (s.view.inflight || !user) return;
 		clearTimeout(s.idle);
 		this.emit(id, s, { type: "turn_start", turnId: user.turnId });
+		let start: { resumeId?: string; seed?: string };
+		let asked: string;
+		try {
+			const before = read(this.folder, s.path);
+			const hash = bodyHash(before.body);
+			if (s.agent && hash !== s.agentHash) this.stop(s);
+			const { sdk_session_id, sdk_body_hash } = before.meta;
+			const history = before.body.trim();
+			start = {
+				...(sdk_session_id && sdk_body_hash === hash
+					? { resumeId: sdk_session_id }
+					: {}),
+				...(history ? { seed: seedFrom(history) } : {}),
+			};
+			const after = appendEntry(before, {
+				kind: "user",
+				text: user.text,
+				...(user.anchor === undefined ? {} : { anchor: user.anchor }),
+			});
+			write(this.folder, s.path, after);
+			asked = bodyHash(after.body);
+			if (s.agent) s.agentHash = asked;
+		} catch (error) {
+			// The transcript is the truth: no turn without its question in it.
+			return this.endWithError(id, s, `could not write ${s.path}: ${error}`);
+		}
 		const current = () =>
 			this.live.get(id) === s && s.view.inflight?.id === user.turnId;
 		const push = async () => {
 			if (!current()) return;
 			let agent = s.agent;
 			try {
-				if (agent && s.edited) {
-					// The transcript changed under the live agent: start over from it.
-					this.stop(s);
-					agent = undefined;
-				}
 				if (!agent) {
-					agent = await this.startAgent(s);
+					agent = await this.driver.start({ folder: this.folder, ...start });
 					if (!current()) return agent.close();
 					s.agent = agent;
+					s.agentHash = asked;
 					void this.run(id, s, agent);
 				}
 				agent.push(user.text);
+				if (s.cancel === user.turnId) {
+					s.cancel = undefined;
+					void this.interrupt(id);
+				}
 			} catch (error) {
 				if (agent && s.agent === agent) this.fail(id, s, agent, String(error));
 				else this.endWithError(id, s, String(error));
@@ -325,51 +318,6 @@ export class Sessions {
 		};
 		if (s.interrupting) void s.interrupting.then(push);
 		else void push();
-	}
-
-	/** Resumes the saved SDK session when it is safe to, else starts seeded. */
-	private async startAgent(s: LiveSession): Promise<AgentSession> {
-		const candidate = s.edited ? undefined : s.resumable;
-		s.edited = false;
-		const resume =
-			candidate !== undefined &&
-			(await this.driver.canResume(candidate, this.folder).catch(() => false));
-		const sdkSessionId = resume ? candidate : crypto.randomUUID();
-		const seed = resume ? undefined : this.seed(s);
-		const agent = this.driver.start({
-			folder: this.folder,
-			sdkSessionId,
-			resume,
-			...(seed ? { seed } : {}),
-		});
-		s.sdkSessionId = sdkSessionId;
-		s.resumable = sdkSessionId;
-		return agent;
-	}
-
-	/**
-	 * The transcript so far, for a fresh agent, without the messages still
-	 * waiting for an answer (they arrive as the turns' own messages).
-	 */
-	private seed(s: LiveSession): string | undefined {
-		const entries = parseBody(read(this.folder, s.path).body);
-		const pending = [s.view.inflight?.user, ...s.view.queue].filter(
-			(m) => m !== undefined,
-		);
-		for (const message of pending.reverse()) {
-			const last = entries.at(-1);
-			if (last?.kind === "user" && last.text === message.text.trim()) {
-				entries.pop();
-			}
-		}
-		if (entries.length === 0) return undefined;
-		const history = entries.map(formatEntry).join("");
-		return [
-			"<transcript>",
-			"This study session started earlier. Its conversation so far, from the session's Markdown file, is below. Continue from it; do not mention this note.",
-			history.trim(),
-			"</transcript>",
-		].join("\n\n");
 	}
 
 	/** Publishes the agent's events until it closes or fails. */
@@ -380,7 +328,7 @@ export class Sessions {
 				if (event.type === "turn_end") {
 					const turn = s.view.inflight;
 					if (!turn) continue;
-					this.finish(s, turn, event.reason, true);
+					this.finish(s, turn, event.reason);
 					this.emit(id, s, { ...event, turnId: turn.id });
 					this.next(id, s);
 					this.idleLater(id, s);
@@ -395,30 +343,30 @@ export class Sessions {
 	}
 
 	/**
-	 * Appends a turn's answer. When the agent is alive and the file wasn't
-	 * edited, the front matter records the SDK session and the new body hash,
-	 * which is what lets the next start resume.
+	 * Appends a turn's answer. If a live agent saw exactly the file it is
+	 * appended to, the front matter records its SDK session and the new body
+	 * hash, which is what lets a later start resume. A failed turn, or one the
+	 * file was edited during, records nothing, so the next start reseeds.
 	 */
-	private finish(
-		s: LiveSession,
-		turn: Turn,
-		reason: TurnEndReason,
-		alive: boolean,
-	) {
+	private finish(s: LiveSession, turn: Turn, reason: TurnEndReason) {
 		const text = turn.blocks
 			.filter((b) => b.kind === "text")
 			.map((b) => b.text.trim())
 			.filter(Boolean)
 			.join("\n\n");
 		try {
-			this.record(s, { kind: "answer", text, reason }, (next) =>
-				alive && !s.edited && s.sdkSessionId
-					? {
-							sdk_session_id: s.sdkSessionId,
-							sdk_body_hash: bodyHash(next.body),
-						}
-					: {},
-			);
+			const before = read(this.folder, s.path);
+			const after = appendEntry(before, { kind: "answer", text, reason });
+			const agent = s.agent;
+			if (agent && bodyHash(before.body) === s.agentHash) {
+				s.agentHash = bodyHash(after.body);
+				after.meta = {
+					...after.meta,
+					sdk_session_id: agent.sdkSessionId,
+					sdk_body_hash: s.agentHash,
+				};
+			}
+			write(this.folder, s.path, after);
 		} catch (error) {
 			console.error(`could not write ${s.path}:`, error);
 		}
@@ -433,15 +381,13 @@ export class Sessions {
 	) {
 		if (s.agent !== agent || this.live.get(id) !== s) return;
 		this.stop(s);
-		// It may have died before saving its last turn: don't resume it.
-		s.resumable = undefined;
 		this.endWithError(id, s, message);
 	}
 
 	private endWithError(id: string, s: LiveSession, message: string) {
 		const turn = s.view.inflight;
 		if (!turn) return;
-		this.finish(s, turn, "error", false);
+		this.finish(s, turn, "error");
 		this.emit(id, s, { type: "error", code: "agent_failed", message });
 		this.emit(id, s, {
 			type: "turn_end",
@@ -465,7 +411,7 @@ export class Sessions {
 		clearTimeout(s.idle);
 		const agent = s.agent;
 		s.agent = undefined;
-		s.sdkSessionId = undefined;
+		s.agentHash = undefined;
 		agent?.close();
 	}
 
@@ -473,7 +419,7 @@ export class Sessions {
 	private freePath(meta: TranscriptMeta) {
 		const date = localDate(new Date(meta.created));
 		const slug = slugify(meta.title) || meta.id.slice(0, 8);
-		const dir = `${meta.course}/sessions`;
+		const dir = sessionsDir(meta.course);
 		const taken = new Set(this.folder.list(dir).map((e) => e.name));
 		for (let n = 1; ; n += 1) {
 			const name = `${date}-${slug}${n === 1 ? "" : `-${n}`}.md`;
@@ -561,15 +507,14 @@ function clientMeta(meta: Partial<TranscriptMeta> & SessionMeta): SessionMeta {
 	};
 }
 
-/** A single folder name that is not hidden and not reserved. */
-export function isCourseName(name: string) {
-	return (
-		name.trim() === name &&
-		name.length > 0 &&
-		!/[/\\:]/.test(name) &&
-		!name.startsWith(".") &&
-		!NOT_COURSES.has(name.toLowerCase())
-	);
+/** The note a fresh agent gets ahead of its first message. */
+function seedFrom(history: string) {
+	return [
+		"<transcript>",
+		"This study session started earlier. Its conversation so far, from the session's Markdown file, is below. Continue from it; do not mention this note.",
+		history,
+		"</transcript>",
+	].join("\n\n");
 }
 
 /** The first line of a message, as a title of at most 60 characters. */

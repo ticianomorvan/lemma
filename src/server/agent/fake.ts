@@ -44,10 +44,11 @@ export type FakeDriverOptions = {
  * servers to model a restart.
  */
 export class FakeDriver implements AgentDriver {
-	/** Every `start` and `push`, for assertions. */
-	readonly started: AgentStartOptions[] = [];
+	/** Every `start` (with the session it got) and `push`, for assertions. */
+	readonly started: (AgentStartOptions &
+		Pick<AgentSession, "sdkSessionId" | "resumed">)[] = [];
 	readonly pushed: string[] = [];
-	/** SDK session ids with a finished turn: what `canResume` finds. */
+	/** SDK session ids with a finished turn: the ones `start` can resume. */
 	readonly saved = new Set<string>();
 	private readonly interruptedResult = loadStream("interrupt").find(
 		(m) => m.type === "result",
@@ -55,15 +56,17 @@ export class FakeDriver implements AgentDriver {
 
 	constructor(private readonly options: FakeDriverOptions) {}
 
-	async canResume(sdkSessionId: string) {
+	/** Whether a session is saved; the SDK's `getSessionInfo`. */
+	async has(sdkSessionId: string) {
 		return this.saved.has(sdkSessionId);
 	}
 
-	start(start: AgentStartOptions): AgentSession {
-		if (start.resume && !this.saved.has(start.sdkSessionId)) {
-			throw new Error(`no saved SDK session ${start.sdkSessionId}`);
-		}
-		this.started.push(start);
+	async start(options: AgentStartOptions): Promise<AgentSession> {
+		const resumed =
+			options.resumeId !== undefined && (await this.has(options.resumeId));
+		const sdkSessionId =
+			resumed && options.resumeId ? options.resumeId : crypto.randomUUID();
+		this.started.push({ ...options, sdkSessionId, resumed });
 		const saved = this.saved;
 		const { streams, pace, pick } = this.options;
 		const interruptedResult = this.interruptedResult;
@@ -85,17 +88,19 @@ export class FakeDriver implements AgentDriver {
 					await pace?.(index, turn);
 					cut = interrupted === turn;
 					if (cut) break;
-					if (message.type === "result") saved.add(start.sdkSessionId);
+					if (message.type === "result") saved.add(sdkSessionId);
 					yield* mapper.map(message);
 				}
 				if (cut && interruptedResult) {
-					saved.add(start.sdkSessionId);
+					saved.add(sdkSessionId);
 					yield* mapper.map(interruptedResult);
 				}
 			}
 		}
 
 		return {
+			sdkSessionId,
+			resumed,
 			push(text) {
 				const turn = pushed.push(text) - 1;
 				latest = turn;

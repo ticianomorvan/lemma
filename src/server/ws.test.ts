@@ -185,9 +185,9 @@ test("a failed agent ends its turn with an error, and the next turn resumes", as
 	// The crashed agent may not have saved its session, so the next one
 	// starts fresh, seeded with the transcript so far.
 	const [first, second] = driver.started;
-	expect(first).toMatchObject({ resume: false });
+	expect(first).toMatchObject({ resumed: false });
 	expect(first?.seed).toBeUndefined();
-	expect(second).toMatchObject({ resume: false });
+	expect(second).toMatchObject({ resumed: false });
 	expect(second?.sdkSessionId).not.toBe(first?.sdkSessionId);
 	expect(second?.seed).toContain("## Tú\n\nuno");
 	expect(second?.seed).not.toContain("dos");
