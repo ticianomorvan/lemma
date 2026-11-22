@@ -17,6 +17,7 @@ beforeAll(async () => {
 		port: 0,
 		distDir: dir,
 		driver,
+		studyDir: null,
 	});
 });
 
@@ -49,7 +50,12 @@ test("answers 404, not the shell, for a missing asset", async () => {
 });
 
 test("serves no client in dev", async () => {
-	const dev = await startServer({ port: 0, distDir: null, driver });
+	const dev = await startServer({
+		port: 0,
+		distDir: null,
+		driver,
+		studyDir: null,
+	});
 	try {
 		expect((await fetch(new URL("/", dev.url))).status).toBe(404);
 	} finally {
@@ -63,6 +69,7 @@ test("refuses to start without a build", async () => {
 			port: 0,
 			distDir: join(dir, "missing"),
 			driver,
+			studyDir: null,
 		}),
 	).rejects.toThrow("bun run build");
 });

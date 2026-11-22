@@ -5,6 +5,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Folder } from "../folder/folder.ts";
 import type { AgentEvent, AgentSession } from "./driver.ts";
 import { SdkDriver } from "./sdk.ts";
 
@@ -12,6 +13,9 @@ const live = test.skipIf(!process.env.LIVE);
 let dir = "";
 let agent: AgentSession | undefined;
 let events: AsyncIterator<AgentEvent> | undefined;
+let folder: Folder | undefined;
+const driver = new SdkDriver();
+const sdkSessionId = crypto.randomUUID();
 
 afterAll(async () => {
 	agent?.close();
@@ -40,7 +44,8 @@ live("a real turn reads a file and completes", async () => {
 		join(dir, "notas.md"),
 		"La varianza de una Bernoulli es $p(1-p)$.\n",
 	);
-	agent = new SdkDriver(dir).start({ sessionId: crypto.randomUUID() });
+	folder = new Folder(dir);
+	agent = driver.start({ folder, sdkSessionId, resume: false });
 	events = agent.events[Symbol.asyncIterator]();
 
 	agent.push("Leé notas.md y decime en una línea qué fórmula aparece.");
@@ -93,3 +98,9 @@ live(
 		expect(answer).toMatch(/derivada/i);
 	},
 );
+
+live("the SDK saved the session, so it can be resumed", async () => {
+	if (!folder) throw new Error("no folder");
+	expect(await driver.canResume(sdkSessionId, folder)).toBe(true);
+	expect(await driver.canResume(crypto.randomUUID(), folder)).toBe(false);
+});

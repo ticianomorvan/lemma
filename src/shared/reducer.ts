@@ -78,6 +78,8 @@ export function apply(view: SessionView, e: SessionEvent): SessionView {
 			const { inflight: _, ...rest } = view;
 			return { ...rest, status: "idle", turns: [...view.turns, ended] };
 		}
+		case "meta":
+			return { ...view, meta: e.meta };
 		case "error": {
 			const { type: _, ...error } = e;
 			return { ...view, error };

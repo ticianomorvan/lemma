@@ -76,6 +76,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 - **What:** the `folder` module (path jail, atomic writes, watcher) and `transcript` (parse, append, body hash).
 - **Behavior:** sessions are created as `.md` files. Resume or reseed follows architecture.md, and idle sessions close after 10 minutes.
 - **Setup:** first run asks for the study folder and stores it in `config.json`.
+- **Agent:** `Write` and `Edit` join, behind the path jail.
 - **Proof:**
   - The transcript round-trips in `bun test`.
   - An integration test restarts the server and the session resumes.

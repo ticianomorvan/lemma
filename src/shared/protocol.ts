@@ -14,6 +14,7 @@ export const Anchor = z.object({
 });
 export type Anchor = z.infer<typeof Anchor>;
 
+/** A session's front matter, as clients see it. */
 export const SessionMeta = z.object({
 	id: z.string(),
 	course: z.string(),
@@ -22,6 +23,10 @@ export const SessionMeta = z.object({
 	mode: z.string().optional(),
 });
 export type SessionMeta = z.infer<typeof SessionMeta>;
+
+/** A session in the folder's list, with when its file last changed. */
+export const SessionSummary = SessionMeta.extend({ updated: z.string() });
+export type SessionSummary = z.infer<typeof SessionSummary>;
 
 export const BlockKind = z.enum(["text", "thinking", "tool"]);
 export type BlockKind = z.infer<typeof BlockKind>;
@@ -98,6 +103,12 @@ export const TurnEndEvent = z.object({
 	usage: Usage,
 });
 
+/** The session's title or mode changed. */
+export const MetaEvent = z.object({
+	type: z.literal("meta"),
+	meta: SessionMeta,
+});
+
 export const ErrorEvent = z.object({
 	type: z.literal("error"),
 	code: z.string(),
@@ -114,6 +125,7 @@ export const SessionEvent = z.discriminatedUnion("type", [
 	BlockEndEvent,
 	ToolResultEvent,
 	TurnEndEvent,
+	MetaEvent,
 	ErrorEvent,
 ]);
 export type SessionEvent = z.infer<typeof SessionEvent>;
@@ -194,8 +206,10 @@ export const EventMessage = z.object({
 });
 export type EventMessage = z.infer<typeof EventMessage>;
 
+/** A file in the study folder changed outside the app. Sent to every socket. */
 export const FolderMessage = z.object({
 	t: z.literal("folder"),
+	/** Relative to the study root, with `/` separators. */
 	path: z.string(),
 	kind: z.enum(["change", "rename"]),
 });
@@ -228,6 +242,17 @@ export type CreateSessionBody = z.infer<typeof CreateSessionBody>;
 export const CreateSessionResponse = z.object({ id: z.string() });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponse>;
 
+export const PatchSessionBody = z
+	.object({
+		title: z.string().max(200).optional(),
+		/** Null clears the mode. */
+		mode: z.string().min(1).max(64).nullable().optional(),
+	})
+	.refine((b) => b.title !== undefined || b.mode !== undefined, {
+		message: "send a title or a mode",
+	});
+export type PatchSessionBody = z.infer<typeof PatchSessionBody>;
+
 export const SendMessageBody = z.object({
 	clientMsgId: z.string().min(1).max(100),
 	text: z.string().min(1).max(100_000),
@@ -249,10 +274,20 @@ export const InterruptResponse = z.object({
 export type InterruptResponse = z.infer<typeof InterruptResponse>;
 
 export const StateResponse = z.object({
+	/** The study folder, or null until the first-run screen sets one. */
+	folder: z.string().nullable(),
+	/** The folder's top-level folders. */
 	courses: z.array(z.string()),
-	sessions: z.array(SessionMeta),
+	/** Every session in the folder, oldest first. */
+	sessions: z.array(SessionSummary),
 });
 export type StateResponse = z.infer<typeof StateResponse>;
+
+export const SetFolderBody = z.object({
+	/** An absolute path, or one starting with `~/`. Made if it doesn't exist. */
+	path: z.string().min(1).max(1024),
+});
+export type SetFolderBody = z.infer<typeof SetFolderBody>;
 
 export const ErrorResponse = z.object({
 	error: z.object({ code: z.string(), message: z.string() }),

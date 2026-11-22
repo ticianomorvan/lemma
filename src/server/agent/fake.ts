@@ -38,19 +38,33 @@ export type FakeDriverOptions = {
  * Replays recorded SDK streams through the same `SdkMapper` as `SdkDriver`.
  * An interrupt drops the rest of the stream and replays the `result` recorded
  * when a real turn was interrupted (`interrupt.jsonl`).
+ *
+ * Like the SDK, it saves a session once one of its turns reaches a `result`,
+ * and only saved sessions can be resumed. Share one driver between two
+ * servers to model a restart.
  */
 export class FakeDriver implements AgentDriver {
 	/** Every `start` and `push`, for assertions. */
 	readonly started: AgentStartOptions[] = [];
 	readonly pushed: string[] = [];
+	/** SDK session ids with a finished turn: what `canResume` finds. */
+	readonly saved = new Set<string>();
 	private readonly interruptedResult = loadStream("interrupt").find(
 		(m) => m.type === "result",
 	);
 
 	constructor(private readonly options: FakeDriverOptions) {}
 
+	async canResume(sdkSessionId: string) {
+		return this.saved.has(sdkSessionId);
+	}
+
 	start(start: AgentStartOptions): AgentSession {
+		if (start.resume && !this.saved.has(start.sdkSessionId)) {
+			throw new Error(`no saved SDK session ${start.sdkSessionId}`);
+		}
 		this.started.push(start);
+		const saved = this.saved;
 		const { streams, pace, pick } = this.options;
 		const interruptedResult = this.interruptedResult;
 		const pushed = this.pushed;
@@ -71,9 +85,11 @@ export class FakeDriver implements AgentDriver {
 					await pace?.(index, turn);
 					cut = interrupted === turn;
 					if (cut) break;
+					if (message.type === "result") saved.add(start.sdkSessionId);
 					yield* mapper.map(message);
 				}
 				if (cut && interruptedResult) {
+					saved.add(start.sdkSessionId);
 					yield* mapper.map(interruptedResult);
 				}
 			}

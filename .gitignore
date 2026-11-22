@@ -6,3 +6,4 @@ test-results/
 playwright-report/
 .env
 .env.*
+.e2e/

@@ -120,3 +120,13 @@ test("events for another turn or block change nothing", () => {
 		apply(view, { type: "turn_end", turnId: "t9", reason: "completed", usage }),
 	).toBe(view);
 });
+
+test("a meta event replaces the session's title and mode", () => {
+	const view = emptyView(meta);
+	const next = apply(view, {
+		type: "meta",
+		meta: { ...meta, title: "Bernoulli", mode: "review" },
+	});
+	expect(next.meta).toEqual({ ...meta, title: "Bernoulli", mode: "review" });
+	expect(next.turns).toBe(view.turns);
+});
