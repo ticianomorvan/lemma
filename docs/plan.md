@@ -19,6 +19,12 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 | `@viz-js/viz` | 3.31.0 |
 | `@playwright/test` | 1.65.1 |
 | `@biomejs/biome` | 2.6.8 |
+| `vite` | 8.3.8 |
+| `@vitejs/plugin-react` | 6.3.0 |
+| `tailwindcss`, `@tailwindcss/vite` | 4.3.5 |
+| `shadcn` (CLI and CSS) | 4.23.0 |
+| `@base-ui/react` | 1.9.0 |
+| `typescript` | 7.0.2 |
 | Bun | 1.4.x |
 
 ## Conventions for every step
@@ -35,9 +41,9 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 ## Steps
 
 ### 0. Scaffold
-- **What:** Bun project, `tsconfig`, Biome, `bun test`, Playwright, and a CI workflow.
+- **What:** Bun project, `tsconfig`, Biome, `bun test`, Playwright, Vite, Tailwind 4 and shadcn/ui (Base UI), and a CI workflow.
 - **Commands:** `bun run dev | build | start | check`.
-- **App:** a placeholder React page served by `Bun.serve`, with HTML imports in dev and `dist/` in production.
+- **App:** a placeholder React page built with a shadcn component. Vite serves it in dev; `Bun.serve` serves the `vite build` output in `dist/` in production.
 - **Proof:** CI is green on the first PR. `bun run start` serves the page, and a Playwright test sees its title.
 
 ### 1. Protocol, sessions and the fake agent

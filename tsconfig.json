@@ -14,7 +14,7 @@
 		"noImplicitOverride": true,
 		"noFallthroughCasesInSwitch": true,
 		"skipLibCheck": true,
-		"types": ["bun"]
+		"types": ["bun", "vite/client"]
 	},
-	"include": ["src", "e2e", "playwright.config.ts"]
+	"include": ["src", "e2e", "playwright.config.ts", "vite.config.ts"]
 }

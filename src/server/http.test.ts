@@ -13,7 +13,7 @@ beforeAll(async () => {
 	await writeFile(join(dir, "app-abc.js"), "console.log(1)");
 	server = await startServer({
 		port: 0,
-		client: { mode: "prod", distDir: dir },
+		distDir: dir,
 	});
 });
 
@@ -45,11 +45,20 @@ test("answers 404, not the shell, for a missing asset", async () => {
 	expect(res.status).toBe(404);
 });
 
+test("serves no client in dev", async () => {
+	const dev = await startServer({ port: 0, distDir: null });
+	try {
+		expect((await fetch(new URL("/", dev.url))).status).toBe(404);
+	} finally {
+		await dev.stop(true);
+	}
+});
+
 test("refuses to start without a build", async () => {
 	await expect(
 		startServer({
 			port: 0,
-			client: { mode: "prod", distDir: join(dir, "missing") },
+			distDir: join(dir, "missing"),
 		}),
 	).rejects.toThrow("bun run build");
 });

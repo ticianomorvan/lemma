@@ -22,8 +22,8 @@ Needs [Bun](https://bun.sh) 1.4.
 
 ```sh
 bun install
-bun run dev      # http://127.0.0.1:4317, bundles the client on request, with hot reload
-bun run build    # bundle the client to dist/
+bun run dev      # http://127.0.0.1:5173: Vite (client) plus the Bun server (API, port 4317)
+bun run build    # vite build: bundle the client to dist/
 bun run start    # serve dist/ (set PORT to change the port)
 bun run check    # typecheck, Biome, bun test, Playwright on the production build
 ```

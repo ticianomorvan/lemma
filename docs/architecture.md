@@ -152,16 +152,21 @@ study/
 ## Stack
 
 - **Server.** Bun, with no framework, about 15 routes.
-- **Client.** React 19, bundled by Bun's HTML imports. Plain CSS with custom properties (tokens shared with the prototype). Lazy-loaded chunks for KaTeX extras, Vega, Mermaid, viz.js and typst.ts. The PWA is a manifest plus a service worker that caches only the app shell.
+- **Client.** React 19, bundled by Vite (`root: src/client`).
+  - UI is shadcn/ui on Base UI with Tailwind 4. Components are copied into `src/client/components/ui` with `bunx --bun shadcn add` and are ours to edit. AI Elements patterns (Message, Message Scroller, Trace, Code Block, Prompt Input) are built from those components and fed by our reducer, not by the AI SDK.
+  - The theme in `src/client/globals.css` maps the prototype's tokens onto shadcn's variable names. Dark mode follows the system unless `<html data-theme>` overrides it.
+  - Fonts (Inter, Source Serif 4) are self-hosted from `@fontsource-variable`, so the app works offline.
+  - Lazy-loaded chunks for KaTeX extras, Vega, Mermaid, viz.js and typst.ts. The PWA is a manifest plus a service worker that caches only the app shell.
 - **Commands.**
-  - `bun run build`: bundle the client to `dist/`.
+  - `bun run dev`: the Vite dev server (port 5173, with React Fast Refresh) and the Bun server (port 4317) side by side. Vite forwards `/api` and `/ws` to Bun without rewriting `Origin`, so the server's own checks still apply.
+  - `bun run build`: `vite build`, which bundles the client to `dist/`.
   - `bun run start`: serve `dist/`, `/api` and `/ws` on one port.
 - **Tests.**
   - `bun test`: the reducer, `normalizeMath`, the transcript round trip, `calc` (known values; `import`, `eval` and loops rejected), the path jail (symlink escapes), and auth.
   - Integration with the fake driver: two clients receive identical events, a client joining mid-stream gets the snapshot plus the tail, an epoch change after restart, the reseed when the hash differs, and a 403 after a device is revoked.
   - Playwright on the production build: streamed math with zero `.katex-error`, PDF select then Ask, and a phone-viewport upload seen from a second browser context.
   - One live smoke test, only under `LIVE=1`.
-- **Check at build time.** Bun HTML-import `routes`, the exact shapes of `stream_event` and `result`, and `getSessionInfo`. B's doc lookup failed, so neither candidate confirmed them.
+- **Check at build time.** The exact shapes of `stream_event` and `result`, and `getSessionInfo`. B's doc lookup failed, so neither candidate confirmed them.
 
 ## Rejected
 
@@ -169,7 +174,8 @@ study/
 - A replay ring buffer.
 - SSE.
 - Hono, Elysia or tRPC.
-- Vite or Next.js.
+- Next.js: server rendering and its own server would fight `Bun.serve` and our WebSocket.
+- Bun's HTML imports for the client, tried in step 0. They work, but shadcn has no setup for them, the CLI build needs a custom script to run Tailwind, and Bun 1.4.4's CSS parser rejects some Tailwind output (`@supports (content: counter(line) / "")`, from shadcn's Code Block). Vite has first-class shadcn and Tailwind support and settled paths for the pdf.js worker, typst.ts WASM and the PWA.
 - Workspaces.
 - An agent worker process.
 - A permission-prompt UI in v1, which would need a cross-client approval protocol.

@@ -2,34 +2,29 @@ import { extname, join, resolve } from "node:path";
 
 export type ServerOptions = {
 	port: number;
-	/** `dev` bundles the client on request with hot reload; `prod` serves the build in `distDir`. */
-	client: { mode: "dev" } | { mode: "prod"; distDir: string };
+	/**
+	 * Directory of the built client (`vite build`) to serve. In dev it is null:
+	 * the Vite dev server serves the client and forwards `/api` and `/ws` here.
+	 */
+	distDir: string | null;
 };
 
 const HOST = "127.0.0.1";
 
-export async function startServer({ port, client }: ServerOptions) {
-	const dev = client.mode === "dev";
+export async function startServer({ port, distDir }: ServerOptions) {
 	return Bun.serve({
 		hostname: HOST,
 		port,
-		routes: dev ? await devRoutes() : await staticRoutes(client.distDir),
-		development: dev && { hmr: true, console: true },
+		routes: distDir ? await clientRoutes(distDir) : {},
 		fetch: notFound,
 	});
-}
-
-/** Bun's HTML import: bundles the client on request, with hot reload. */
-async function devRoutes() {
-	const { default: index } = await import("../client/index.html");
-	return { "/*": index };
 }
 
 /**
  * One route per file in the build output. Other paths without an extension get
  * the SPA shell; a missing asset (say, a stale hashed bundle) gets a 404, not HTML.
  */
-async function staticRoutes(distDir: string) {
+async function clientRoutes(distDir: string) {
 	const root = resolve(distDir);
 	const index = Bun.file(join(root, "index.html"));
 	if (!(await index.exists())) {

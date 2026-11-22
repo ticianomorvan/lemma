@@ -7,15 +7,14 @@ const port = parsePort(process.env.PORT ?? "4317");
 
 const server = await startServer({
 	port,
-	client: production
-		? {
-				mode: "prod",
-				distDir: fileURLToPath(new URL("../../dist", import.meta.url)),
-			}
-		: { mode: "dev" },
+	distDir: production
+		? fileURLToPath(new URL("../../dist", import.meta.url))
+		: null,
 });
 console.log(
-	`${APP_NAME} on ${server.url} (${production ? "production" : "dev"})`,
+	production
+		? `${APP_NAME} on ${server.url}`
+		: `${APP_NAME} API on ${server.url}; open the Vite dev server instead`,
 );
 
 function parsePort(value: string) {
