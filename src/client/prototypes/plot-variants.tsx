@@ -10,6 +10,7 @@ import {
 } from "mafs";
 import type { ReactNode } from "react";
 import { compile } from "../blocks/expr.ts";
+import { compilePlot, legendOf, PlotSvg } from "../blocks/plot-svg.tsx";
 import type { Plot, PlotItem } from "../blocks/schema.ts";
 import { Tex } from "../blocks/tex.tsx";
 
@@ -284,3 +285,27 @@ export function PlotAnnotated({ plot }: { plot: Plot }) {
 }
 
 export type { PlotItem };
+
+/** Tarjeta, drawn with our own SVG renderer (d3-scale + d3-shape) instead of Mafs. */
+export function PlotCardSvg({ plot, title }: { plot: Plot; title: string }) {
+	const items = compilePlot(plot);
+	return (
+		<figure className="pv-card">
+			<figcaption className="pv-card-head">
+				<span className="pv-chip">{title}</span>
+			</figcaption>
+			<div className="pl-svg-wrap">
+				<PlotSvg plot={plot} items={items} />
+			</div>
+			<div className="pl-legend">
+				{legendOf(items).map((l, i) => (
+					// biome-ignore lint/suspicious/noArrayIndexKey: static legend
+					<span key={i} className="pl-legend-item">
+						<span className="pl-swatch" data-kind={l.kind} style={{ background: l.color }} />
+						<Tex tex={l.tex} />
+					</span>
+				))}
+			</div>
+		</figure>
+	);
+}

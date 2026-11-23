@@ -16,7 +16,7 @@ import {
 	normalTail,
 } from "./content.ts";
 import { FitchCard, FitchClassic, FitchGuided } from "./fitch-variants.tsx";
-import { PlotAnnotated, PlotCard, PlotClassic } from "./plot-variants.tsx";
+import { PlotAnnotated, PlotCard, PlotCardSvg, PlotClassic } from "./plot-variants.tsx";
 import { ProofCard, ProofClassic, ProofOutline } from "./proof-variants.tsx";
 
 const VARIANTS = [
@@ -29,12 +29,20 @@ const VARIANTS = [
 		pmf: () => <PlotClassic plot={binomial} />,
 	},
 	{
-		name: "Tarjeta",
+		name: "Mafs",
 		proof: () => <ProofCard proof={contraposition} title="Deducción natural" />,
 		sequent: () => <ProofCard proof={excludedMiddle} title="Cálculo de secuentes" />,
 		fitch: () => <FitchCard fitch={contrapositionFitch} />,
 		plot: () => <PlotCard plot={normalTail} title="Normal estándar" />,
 		pmf: () => <PlotCard plot={binomial} title="Binomial(5; 0,4)" />,
+	},
+	{
+		name: "SVG",
+		proof: () => <ProofCard proof={contraposition} title="Deducción natural" />,
+		sequent: () => <ProofCard proof={excludedMiddle} title="Cálculo de secuentes" />,
+		fitch: () => <FitchCard fitch={contrapositionFitch} />,
+		plot: () => <PlotCardSvg plot={normalTail} title="Normal estándar" />,
+		pmf: () => <PlotCardSvg plot={binomial} title="Binomial(5; 0,4)" />,
 	},
 	{
 		name: "Guiado",
