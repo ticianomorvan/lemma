@@ -3,6 +3,8 @@
  * pipeline): the label each one's card shows, and the longest source it
  * accepts (block.tsx checks it before rendering). `typst` joins in step 12.
  */
+import type { BLOCK_KIND_NAMES } from "../../shared/blocks.ts";
+
 export const BLOCK_KINDS = {
 	dot: { label: "Grafo", maxSource: 20_000 },
 	proof: { label: "Deducción", maxSource: 50_000 },
@@ -10,7 +12,10 @@ export const BLOCK_KINDS = {
 	plot: { label: "Gráfico", maxSource: 50_000 },
 	"vega-lite": { label: "Datos", maxSource: 100_000 },
 	mermaid: { label: "Diagrama", maxSource: 20_000 },
-} as const;
+} as const satisfies Record<
+	(typeof BLOCK_KIND_NAMES)[number],
+	{ label: string; maxSource: number }
+>;
 
 export type BlockKind = keyof typeof BLOCK_KINDS;
 

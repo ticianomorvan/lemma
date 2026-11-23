@@ -99,7 +99,8 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 		if ("fn" in item && fn) {
 			const a = Math.max(item.from ?? x0, x0);
 			const b = Math.min(item.to ?? x1, x1);
-			const pts = sample(fn, a, b);
+			if (b <= a) return;
+			const pts = breakPoles(sample(fn, a, b), y0, y1);
 			const d = line<[number, number]>()
 				.defined(([, v]) => Number.isFinite(v))
 				.x(([u]) => x(u))
@@ -119,7 +120,7 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 			const a = Math.max(item.region.from ?? x0, x0);
 			const b = Math.min(item.region.to ?? x1, x1);
 			if (b > a) {
-				const pts = sample(fn, a, b);
+				const pts = breakPoles(sample(fn, a, b), y0, y1);
 				const d = area<[number, number]>()
 					.defined(([, v]) => Number.isFinite(v))
 					.x(([u]) => x(u))
@@ -154,9 +155,10 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 					/>,
 				);
 		} else if ("stem" in item) {
-			for (const [sx, sy] of item.stem) {
+			item.stem.forEach(([sx, sy], j) => {
 				out.push(
-					<g key={`${k}-${sx}`}>
+					// biome-ignore lint/suspicious/noArrayIndexKey: stems of a static plot
+					<g key={`${k}-${j}`}>
 						<line
 							x1={x(sx)}
 							x2={x(sx)}
@@ -168,7 +170,7 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 						<circle cx={x(sx)} cy={y(sy)} r={4} fill={color} />
 					</g>,
 				);
-			}
+			});
 		} else if ("step" in item) {
 			// A CDF: each value holds from its x to the next; open dot at each jump's foot.
 			let prev: [number, number] = [x0, 0];
@@ -349,6 +351,22 @@ function Label({
 			<Tex tex={tex} />
 		</span>
 	);
+}
+
+/**
+ * Splits the curve where one step crosses the whole window (a pole, as in
+ * `tan(x)` or `1/(x-1)`), so the two branches aren't joined by a vertical line.
+ */
+function breakPoles(pts: [number, number][], y0: number, y1: number) {
+	const out: [number, number][] = [];
+	for (const p of pts) {
+		const prev = out.at(-1);
+		if (prev && ((prev[1] > y1 && p[1] < y0) || (prev[1] < y0 && p[1] > y1))) {
+			out.push([p[0], Number.NaN]);
+		}
+		out.push(p);
+	}
+	return out;
 }
 
 function sample(fn: Fn, a: number, b: number): [number, number][] {

@@ -11,7 +11,11 @@ const FONT = "Helvetica,Arial,sans-serif";
 let viz: Promise<Viz> | undefined;
 
 async function render(source: string): Promise<SVGSVGElement> {
-	viz ??= instance();
+	// A failed WASM load is retried by the next block, not cached for good.
+	viz ??= instance().catch((e) => {
+		viz = undefined;
+		throw e;
+	});
 	const svg = (await viz).renderSVGElement(source, {
 		graphAttributes: { bgcolor: "transparent", fontname: FONT },
 		nodeAttributes: { fontname: FONT },

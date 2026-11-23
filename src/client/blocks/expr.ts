@@ -43,7 +43,6 @@ const FUNCTIONS: Record<string, [(...a: number[]) => number, number, number]> =
 		tanh: [Math.tanh, 1, 1],
 		exp: [Math.exp, 1, 1],
 		ln: [Math.log, 1, 1],
-		log: [Math.log, 1, 1],
 		log10: [Math.log10, 1, 1],
 		log2: [Math.log2, 1, 1],
 		sqrt: [Math.sqrt, 1, 1],

@@ -63,6 +63,11 @@ test("each valid block renders, and each broken one shows its source and the err
 	await expect(block(page, "dot-broken").locator(".block-source")).toHaveText(
 		"digraph { a -> }",
 	);
+	// tan(x) on [-4, 4] has poles at ±π/2: three branches, not one joined line.
+	const tan = await block(page, "plot-poles")
+		.locator(".plot-svg svg path")
+		.getAttribute("d");
+	expect(tan?.match(/M/g)?.length).toBe(3);
 	// A block whose fence hasn't closed shows its source, not an error.
 	await expect(block(page, "pending")).toHaveAttribute("data-state", "pending");
 	await expect(block(page, "pending").locator(".block-source")).toContainText(

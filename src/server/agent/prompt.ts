@@ -3,38 +3,8 @@
  * client's renderer relies on, and the language rules. See docs/spec.md →
  * Agent configuration and Rendering pipeline.
  */
-/** The functions a `plot` expression may call (client/blocks/expr.ts; prompt.test.ts keeps them in step). */
-export const PLOT_FUNCTIONS = [
-	"sin",
-	"cos",
-	"tan",
-	"asin",
-	"acos",
-	"atan",
-	"sinh",
-	"cosh",
-	"tanh",
-	"exp",
-	"ln",
-	"log",
-	"log10",
-	"log2",
-	"sqrt",
-	"abs",
-	"floor",
-	"ceil",
-	"round",
-	"sign",
-	"min",
-	"max",
-	"erf",
-	"normpdf(x, mu, sigma)",
-	"normcdf(x, mu, sigma)",
-	"tpdf(x, df)",
-	"chi2pdf(x, df)",
-	"exppdf(x, lambda)",
-	"unifpdf(x, a, b)",
-];
+import { PLOT_FUNCTIONS } from "../../shared/blocks.ts";
+
 const FUNCTION_LIST = PLOT_FUNCTIONS.map((f) => `\`${f}\``).join(", ");
 
 export const CONVENTIONS = `# Lemma

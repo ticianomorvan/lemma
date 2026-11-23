@@ -153,6 +153,14 @@ const CASES: { id: string; title: string; md: string }[] = [
 		),
 	},
 	{
+		id: "plot-poles",
+		title: "tan(x): sus ramas no se unen",
+		md: fence(
+			"plot",
+			json({ xDomain: [-4, 4], yDomain: [-5, 5], items: [{ fn: "tan(x)" }] }),
+		),
+	},
+	{
 		id: "plot-broken",
 		title: "plot con una expresión prohibida",
 		md: fence(

@@ -4,7 +4,13 @@
  * and the loader refuses every URL, so a spec can neither run code nor fetch.
  */
 
-import { Suspense, useLayoutEffect, useRef, useState } from "react";
+import {
+	Suspense,
+	useDeferredValue,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { parse, View, loader as vegaLoader } from "vega";
 import { expressionInterpreter } from "vega-interpreter";
 import { type Config, compile, type TopLevelSpec } from "vega-lite";
@@ -124,14 +130,23 @@ async function render(source: string, width: number): Promise<SVGSVGElement> {
 
 export default function VegaLite({ source }: { source: string }) {
 	const ref = useRef<HTMLDivElement>(null);
-	const [width, setWidth] = useState(0);
+	const [measured, setWidth] = useState(0);
+	// A resize keeps the drawn chart until the new width has rendered.
+	const width = useDeferredValue(measured);
 	const scheme = useScheme();
 	useLayoutEffect(() => {
 		const el = ref.current;
 		if (!el) return;
-		// Steps of 40px, so a resize re-renders only now and then.
-		const measure = () =>
-			setWidth(Math.max(240, Math.floor(el.clientWidth / 40) * 40));
+		// The content box (inside the padding), in steps of 40px so a resize
+		// re-renders only now and then; narrower than 200px, the box scrolls.
+		const measure = () => {
+			const style = getComputedStyle(el);
+			const inner =
+				el.clientWidth -
+				Number.parseFloat(style.paddingLeft) -
+				Number.parseFloat(style.paddingRight);
+			setWidth(Math.max(200, Math.floor(inner / 40) * 40));
+		};
 		measure();
 		const ro = new ResizeObserver(measure);
 		ro.observe(el);

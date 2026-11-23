@@ -112,9 +112,23 @@ export function parseBlock<T>(schema: z.ZodType<T>, source: string): T {
 	}
 	const result = schema.safeParse(json);
 	if (!result.success) {
-		const issue = result.error.issues[0];
+		const issue = closest(result.error.issues[0]);
 		const at = issue?.path.length ? ` (en ${issue.path.join(".")})` : "";
 		throw new Error(`${issue?.message ?? "bloque inválido"}${at}`);
 	}
 	return result.data;
+}
+
+type Issue = z.core.$ZodIssue;
+
+/**
+ * For an item that matches none of a union's shapes, zod reports only
+ * "Invalid input". The shape with the fewest problems is the one meant, so
+ * report its first problem instead (say, an unknown key `colour`).
+ */
+function closest(issue: Issue | undefined): Issue | undefined {
+	if (issue?.code !== "invalid_union" || !issue.errors.length) return issue;
+	const best = issue.errors.reduce((a, b) => (b.length < a.length ? b : a));
+	const inner = closest(best[0]);
+	return inner ? { ...inner, path: [...issue.path, ...inner.path] } : issue;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { compile, ExprError } from "./expr.ts";
+import { PLOT_FUNCTIONS } from "../../shared/blocks.ts";
+import { compile, ExprError, FUNCTION_NAMES } from "./expr.ts";
 
 describe("plot expressions", () => {
 	test("evaluate arithmetic, precedence and functions", () => {
@@ -43,5 +44,11 @@ describe("plot expressions", () => {
 		]) {
 			expect(() => compile(bad), bad).toThrow(ExprError);
 		}
+	});
+
+	test("accept exactly the functions the system prompt lists", () => {
+		const listed = PLOT_FUNCTIONS.map((f) => f.replace(/\(.*$/, ""));
+		expect(FUNCTION_NAMES.toSorted()).toEqual(listed.toSorted());
+		expect(() => compile("log(x)")).toThrow("nombre desconocido «log»");
 	});
 });

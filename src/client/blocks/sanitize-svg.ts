@@ -83,7 +83,9 @@ export function sanitizeSvg<T extends Element>(root: T): T {
 				name === "target" ||
 				// `url(...)` may only point inside the document (`url(#clip)`).
 				!localUrls(value) ||
-				value.includes("javascript:")
+				value.includes("javascript:") ||
+				// CSS escapes (`u\72l(`) would hide a URL from the check above.
+				(name === "style" && value.includes("\\"))
 			) {
 				el.removeAttribute(attr.name);
 			}
@@ -92,7 +94,7 @@ export function sanitizeSvg<T extends Element>(root: T): T {
 			// Inline <style> may import or fetch; keep only self-contained rules.
 			const css = el.textContent ?? "";
 			if (
-				/@import|expression\(|javascript:/i.test(css) ||
+				/@import|expression\(|javascript:|\\/i.test(css) ||
 				!localUrls(css.replace(/\s/g, "").toLowerCase())
 			) {
 				el.remove();
