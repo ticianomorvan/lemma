@@ -55,6 +55,29 @@ test("a streamed math answer renders align, cases, pmatrix and inline math with 
 	).toBe(0);
 });
 
+test("a calc call shows as one row before the answer", async ({ page }) => {
+	// Phone width: the answer's wide formulas must scroll, not widen the thread.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await openSession(page);
+	await ask(page, "Probabilidad binomial\n\n<!--fixture:calc-->");
+	// The row's tooltip is the result's first line.
+	const row = page.locator('[title="0.8497316674"]');
+	await expect(row).toHaveText("Calculó binomcdf(10, 0.3, 4) …", {
+		timeout: 20_000,
+	});
+	await expect(stop(page)).toBeHidden({ timeout: 20_000 });
+	await expect(
+		page.getByRole("heading", { name: "a) Binomial" }),
+	).toBeVisible();
+	await expect(page.locator(".katex-error")).toHaveCount(0);
+	const widest = await page
+		.locator(".answer p")
+		.evaluateAll((ps) =>
+			Math.max(...ps.map((p) => p.getBoundingClientRect().right)),
+		);
+	expect(widest).toBeLessThanOrEqual(390);
+});
+
 test("stop interrupts the answer and a message sent meanwhile waits its turn", async ({
 	page,
 }) => {

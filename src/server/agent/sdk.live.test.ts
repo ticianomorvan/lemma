@@ -98,6 +98,25 @@ live(
 	},
 );
 
+live("a probability question goes through calc", async () => {
+	agent?.push(
+		"Si X ~ Bin(10; 0,3), ¿cuánto vale P(X ≤ 4)? Respondé en una línea.",
+	);
+	const all = await turn();
+	expect(all).toContainEqual(
+		expect.objectContaining({
+			type: "block_start",
+			kind: "tool",
+			name: "mcp__study__calc",
+		}),
+	);
+	expect(all).toContainEqual(
+		expect.objectContaining({ type: "tool_result", ok: true }),
+	);
+	// Spanish answers write the decimal comma as `0{,}8497` in LaTeX.
+	expect(text(all)).toMatch(/0(\.|,|\{,\})8497/);
+});
+
 live("the SDK saved the session, so a new agent resumes it", async () => {
 	if (!folder || !agent) throw new Error("no agent");
 	const resumed = await driver.start({ folder, resumeId: agent.sdkSessionId });
