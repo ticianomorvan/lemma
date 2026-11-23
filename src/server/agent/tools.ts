@@ -4,9 +4,10 @@
  * the SDK approves `Read`s inside the folder on its own without asking, so the
  * hook is what makes the jail hold for every call.
  */
+
+import { CALC_TOOL } from "../../shared/protocol.ts";
 import type { Folder } from "../folder/folder.ts";
 import { writeDenied } from "../folder/layout.ts";
-import { CALC_TOOL } from "./study.ts";
 
 /**
  * The agent's built-in tools, plus `calc` from the `study` MCP server.

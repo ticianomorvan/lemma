@@ -8,8 +8,9 @@
  * `import`, `createUnit`, `evaluate`, `parse`, `simplify` and `derivative`
  * are replaced by functions that throw, so an expression can't add functions,
  * define units or reach the parser. `compile` and `parser` give the same
- * reach as `evaluate`/`parse`, and `config` would change the instance for
- * every later expression, so those are stubbed too.
+ * reach as `evaluate`/`parse`, and `config` would change how the rest of the
+ * call evaluates (a 10^6-digit BigNumber precision, say), so those are
+ * stubbed too.
  */
 import { all, create, type FactoryFunctionMap } from "mathjs";
 import { DISTRIBUTIONS, type Fn } from "./distributions.ts";
@@ -50,7 +51,18 @@ math.import(
 					return value;
 				};
 			}
-			return [name, math.typed(name, signatures)];
+			const typed = math.typed(name, signatures);
+			// The wrong number or type of arguments says how to call it, too.
+			const checked = (...args: unknown[]) => {
+				try {
+					return typed(...args);
+				} catch (err) {
+					if (err instanceof TypeError)
+						throw new Error(`invalid arguments: ${usage}`);
+					throw err;
+				}
+			};
+			return [name, checked];
 		}),
 	),
 );
@@ -72,9 +84,19 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
 export function run(expr: string): CalcResult {
 	try {
 		const result = evaluate(expr, new Map());
-		const value = math.isResultSet(result)
-			? (result.entries as unknown[]).map(format).join("\n")
-			: format(result);
+		const values = math.isResultSet(result)
+			? (result.entries as unknown[])
+			: [result];
+		const value = values
+			.filter((v) => v !== undefined)
+			.map(format)
+			.join("\n");
+		// An empty tool result is an error to the API, and says nothing anyway.
+		if (value === "")
+			return {
+				ok: false,
+				error: "nothing to show: the last line ends in ';' or is empty",
+			};
 		if (bytes(value) > MAX_OUTPUT_BYTES)
 			return {
 				ok: false,

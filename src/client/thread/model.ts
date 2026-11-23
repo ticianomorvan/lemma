@@ -1,8 +1,9 @@
-import type {
-	Block,
-	SessionView,
-	Turn,
-	UserMessage,
+import {
+	type Block,
+	CALC_TOOL,
+	type SessionView,
+	type Turn,
+	type UserMessage,
 } from "../../shared/protocol.ts";
 import type { Outgoing, SessionState } from "../store.ts";
 
@@ -60,14 +61,11 @@ export function visibleBlocks(turn: Turn): Block[] {
 	);
 }
 
-/** The server's `calc` tool, as the SDK names tools from MCP servers. */
-export const CALC = "mcp__study__calc";
-
 const TOOL_VERBS: Record<string, [doing: string, done: string]> = {
 	Read: ["Leyendo", "Leyó"],
 	Grep: ["Buscando", "Buscó"],
 	Glob: ["Listando", "Listó"],
-	[CALC]: ["Calculando", "Calculó"],
+	[CALC_TOOL]: ["Calculando", "Calculó"],
 };
 
 /** "Leyó notas.md" from a tool block's partial JSON input. */
@@ -89,17 +87,26 @@ function parseLoose(json: string): Record<string, unknown> {
 	try {
 		return JSON.parse(json) as Record<string, unknown>;
 	} catch {
-		const m = /"(file_path|pattern|expr)"\s*:\s*"([^"]*)/.exec(json);
-		return m?.[1] && m[2] !== undefined ? { [m[1]]: m[2] } : {};
+		// A partial input: take the string so far, escapes included.
+		const m = /"(file_path|pattern|expr)"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(json);
+		return m?.[1] && m[2] !== undefined ? { [m[1]]: decodePartial(m[2]) } : {};
+	}
+}
+
+/** Decodes a JSON string's escapes, dropping a half-sent one at the end. */
+function decodePartial(raw: string): string {
+	try {
+		return JSON.parse(`"${raw.replace(/\\(u[0-9a-fA-F]{0,3})?$/, "")}"`);
+	} catch {
+		return raw;
 	}
 }
 
 const basename = (path: string) => path.split("/").pop() ?? path;
 
-/** A multi-line `calc` expression shows its first line, then "…". A partial
- * input still holds the JSON escape `\\n` rather than a newline. */
+/** A multi-line `calc` expression shows its first line, then "…". */
 function firstLine(expr: string): string {
-	const [first = "", ...rest] = expr.trim().split(/\n|\\n/);
+	const [first = "", ...rest] = expr.trim().split("\n");
 	return rest.length > 0 ? `${first.trim()} …` : first.trim();
 }
 

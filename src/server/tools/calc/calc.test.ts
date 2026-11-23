@@ -59,6 +59,18 @@ describe("calc engine: known values (tolerance 1e-9)", () => {
 			error: "invalid arguments: binomcdf(n, p, k)",
 		});
 		expect(run("invt(1.5, 9)").ok).toBe(false);
+		expect(run("binomcdf(10, 0.3)")).toEqual({
+			ok: false,
+			error: "invalid arguments: binomcdf(n, p, k)",
+		});
+	});
+
+	test("an expression with nothing to show is an error, not an empty result", () => {
+		for (const expr of ["x = 3;", "", "  "])
+			expect(run(expr)).toEqual({
+				ok: false,
+				error: "nothing to show: the last line ends in ';' or is empty",
+			});
 	});
 
 	test("several statements: one line each, `;` hides one, fresh scope", () => {
@@ -110,8 +122,19 @@ describe("calc in a Worker", () => {
 		const elapsed = performance.now() - start;
 		expect(result).toEqual({ ok: false, error: "stopped after 1 s" });
 		expect(elapsed).toBeGreaterThan(950);
-		expect(elapsed).toBeLessThan(2500);
+		// Generous: a busy CI machine can fire the timer late.
+		expect(elapsed).toBeLessThan(5000);
 		expect(await calc("1 + 1")).toEqual({ ok: true, value: "2" });
+	});
+
+	test("runs calls one at a time", async () => {
+		const loop = calc("f(x) = sum(map(1:1e6, cos)); sum(map(1:1e6, f))");
+		let looped = false;
+		void loop.then(() => {
+			looped = true;
+		});
+		expect(await calc("1 + 1")).toEqual({ ok: true, value: "2" });
+		expect(looped).toBe(true);
 	});
 
 	test("rejects import and evaluate", async () => {

@@ -166,7 +166,8 @@ study/
   - A locked mathjs instance: `import`, `createUnit`, `evaluate`, `parse`, `simplify` and `derivative` are stubbed out, and so are `compile` and `parser` (the same reach as `evaluate`/`parse`) and `config` (it would change the instance for every later expression).
   - Only an allow-list of distribution functions is exposed (`src/server/tools/calc/distributions.ts`, from stdlib's `@stdlib/stats-base-dists-*`), named TI-84 style: `binompdf`, `binomcdf`, `invbinom`, `poissonpdf`, `poissoncdf`, `invpoisson`, `normpdf`, `normcdf`, `invnorm`, `tpdf`, `tcdf`, `invt`, `chi2pdf`, `chi2cdf`, `invchi2`. Each CDF is P(X ≤ x) at one point.
   - Input is capped at 2 KB and output at 10 KB.
-  - Each call runs in its own Worker, killed after the call or after 1 s. Loading mathjs takes about 350 ms, so the next Worker is started as soon as one is taken, and the clock starts once it is ready.
+  - Each call runs in its own Worker, killed after the call or after 1 s. Loading mathjs takes about 350 ms, so the next Worker is started as soon as one is taken, and the clock starts once it is ready. Calls run one at a time: Bun ignores Worker memory limits, and one call can allocate several GB (`zeros(1e9)`) in its second before it is killed, so this keeps that to one Worker. That brief spike is an accepted risk for a single-user local app.
+  - An expression with nothing to show (empty, or a last line ending in `;`) is an error, so Claude never gets a blank result.
   - The hook and `canUseTool` let `mcp__study__calc` through; any other MCP tool name is refused.
 - **Accepted risk.** On the LAN, a cookie sent over plain HTTP can be sniffed. This is documented, and Tailscale Serve is the hardened option.
 

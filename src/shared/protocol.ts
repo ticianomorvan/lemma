@@ -7,6 +7,9 @@ import { z } from "zod";
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
+/** The server's `calc` tool, as the SDK names a tool from the `study` MCP server. */
+export const CALC_TOOL = "mcp__study__calc";
+
 export const Anchor = z.object({
 	path: z.string().min(1),
 	page: z.number().int().positive(),

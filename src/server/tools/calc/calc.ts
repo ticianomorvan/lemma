@@ -7,6 +7,10 @@
  * is started as soon as one is taken, and the 1 s clock starts once that
  * Worker is ready. No Worker serves two calls, so nothing an expression does
  * outlives it.
+ *
+ * Calls run one at a time. Bun ignores Worker memory limits, and one call can
+ * allocate gigabytes (`zeros(1e9)`) before it is killed; running them in
+ * turn keeps that to one Worker at a time.
  */
 import type { CalcResult } from "./engine.ts";
 
@@ -20,18 +24,26 @@ export const TIMEOUT_MS = 1000;
 const STARTUP_MS = 10_000;
 
 let spare: Promise<Worker> | undefined;
+let queue: Promise<unknown> = Promise.resolve();
 
-export async function calc(expr: string): Promise<CalcResult> {
+export function calc(expr: string): Promise<CalcResult> {
 	if (new TextEncoder().encode(expr).length > MAX_INPUT_BYTES)
-		return {
+		return Promise.resolve({
 			ok: false,
 			error: `the expression is longer than ${MAX_INPUT_BYTES / 1024} KB`,
-		};
+		});
+	const result = queue.then(() => evaluate(expr));
+	queue = result;
+	return result;
+}
+
+async function evaluate(expr: string): Promise<CalcResult> {
 	const ready = spare ?? spawn();
 	spare = spawn();
 	let worker: Worker;
 	try {
-		worker = await ready;
+		// A spare that failed while it waited gets one fresh retry.
+		worker = await ready.catch(() => spawn());
 	} catch (err) {
 		return { ok: false, error: (err as Error).message };
 	}
@@ -65,6 +77,8 @@ function spawn(): Promise<Worker> {
 		const fail = (message: string) => {
 			clearTimeout(timer);
 			worker.terminate();
+			// A spare that dies before a call takes it is not handed out.
+			if (spare === ready) spare = undefined;
 			reject(new Error(message));
 		};
 		const timer = setTimeout(

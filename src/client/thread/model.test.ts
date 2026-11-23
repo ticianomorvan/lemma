@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { Block } from "../../shared/protocol.ts";
-import { CALC, toolLabel } from "./model.ts";
+import { type Block, CALC_TOOL as CALC } from "../../shared/protocol.ts";
+import { toolLabel } from "./model.ts";
 
 const tool = (name: string, text: string, done: boolean): Block => ({
 	id: "m:0",
@@ -22,6 +22,10 @@ test("a calc row names the expression's first line, partial input included", () 
 		"Calculando binomcdf(10, 0.3, 4) …",
 	);
 	expect(toolLabel(tool(CALC, '{"expr":"2 + 2"}', true))).toBe("Calculó 2 + 2");
+	// Escaped quotes, and an escape cut in half mid-stream.
+	expect(toolLabel(tool(CALC, '{"expr":"unit(\\"5 m\\") + 1\\', false))).toBe(
+		'Calculando unit("5 m") + 1',
+	);
 	expect(toolLabel(tool("Read", '{"file_path":"/a/notas.md"}', true))).toBe(
 		"Leyó notas.md",
 	);

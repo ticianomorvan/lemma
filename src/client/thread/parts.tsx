@@ -6,9 +6,9 @@ import {
 	CollapsibleTrigger,
 } from "#components/ui/collapsible.tsx";
 import { cn } from "#lib/utils.ts";
-import type { Block, Turn } from "../../shared/protocol.ts";
+import { type Block, CALC_TOOL, type Turn } from "../../shared/protocol.ts";
 import { Markdown } from "../markdown/markdown.tsx";
-import { CALC, toolLabel, visibleBlocks } from "./model.ts";
+import { toolLabel, visibleBlocks } from "./model.ts";
 
 /** The blocks of one assistant turn: thinking, tools and answer text. */
 export function TurnBlocks({
@@ -88,7 +88,7 @@ function Thinking({ block, live }: { block: Block; live: boolean }) {
 
 function ToolRow({ block }: { block: Block }) {
 	const failed = block.result && !block.result.ok;
-	const Icon = block.name === CALC ? Calculator : FileText;
+	const Icon = block.name === CALC_TOOL ? Calculator : FileText;
 	return (
 		<div
 			className={cn(
