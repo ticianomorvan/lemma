@@ -9,7 +9,7 @@
 import { ArrowDown, ArrowUp, Square } from "lucide-react";
 import { useRef } from "react";
 import { cn } from "#lib/utils.ts";
-import { Markdown } from "../markdown/markdown.tsx";
+import { Markdown } from "../markdown/lazy.tsx";
 import type { SessionState } from "../store.ts";
 import { useComposer, useStickToBottom, useStopOnEscape } from "./hooks.ts";
 import {

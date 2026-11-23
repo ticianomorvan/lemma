@@ -33,12 +33,19 @@ type Compiled = { item: PlotItem; color: string; fn?: Fn };
 /** Compiles every expression up front, so a bad one fails the whole block. */
 export function compilePlot(plot: Plot): Compiled[] {
 	let series = 0;
-	return plot.items.map((item) => {
+	return plot.items.map((item, i) => {
 		const named = item.color ? COLORS[item.color] : undefined;
 		const takesSeries = "fn" in item || "stem" in item || "step" in item;
 		const color = named ?? (takesSeries ? (SERIES[series++ % SERIES.length] as string) : "var(--primary)");
-		if ("fn" in item) return { item, color, fn: compile(item.fn) };
-		if ("region" in item) return { item, color, fn: compile(item.region.fn) };
+		const at = (source: string) => {
+			try {
+				return compile(source);
+			} catch (e) {
+				throw new Error(`${(e as Error).message} (en items.${i}: «${source}»)`);
+			}
+		};
+		if ("fn" in item) return { item, color, fn: at(item.fn) };
+		if ("region" in item) return { item, color, fn: at(item.region.fn) };
 		return { item, color };
 	});
 }
@@ -99,7 +106,7 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 					.x(([u]) => x(u))
 					.y0(baseY)
 					.y1(([, v]) => y(clampY(v, y0, y1)))(pts);
-				out.push(<path key={k} d={d ?? ""} fill={color} fillOpacity={0.22} />);
+				out.push(<path key={k} d={d ?? ""} fill={color} className="plot-region" />);
 			}
 		} else if ("point" in item) {
 			const [px, py] = item.point;
@@ -107,7 +114,7 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 				<circle key={k} cx={x(px)} cy={y(py)} r={4.5}
 					fill={item.open ? "var(--card)" : color} stroke={color} strokeWidth={1.75} />,
 			);
-			if (item.label) labels.push(<Label key={k} left={x(px) + 8} top={y(py) - 8} tex={item.label} />);
+			if (item.label) labels.push(<Label key={k} at={x(px)} gap={8} top={y(py) - 8} width={width} tex={item.label} />);
 		} else if ("stem" in item) {
 			for (const [sx, sy] of item.stem) {
 				out.push(
@@ -138,14 +145,14 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 				<line key={k} x1={x(item.vline)} x2={x(item.vline)} y1={y(y0)} y2={M.top}
 					stroke="var(--muted-foreground)" strokeWidth={1.25} strokeDasharray="4 3" />,
 			);
-			if (item.label) labels.push(<Label key={k} left={x(item.vline) + 5} top={M.top - 2} tex={item.label} />);
+			if (item.label) labels.push(<Label key={k} at={x(item.vline)} gap={5} top={M.top - 2} width={width} tex={item.label} />);
 		}
 	});
 
 	return (
 		<div ref={ref} className="plot-svg">
 			{width > 0 && (
-				<svg width={width} height={height} role="img" aria-label="Gráfico">
+				<svg width={width} height={height} role="img" aria-label={describe(plot)}>
 					<defs>
 						<clipPath id={clipId}>
 							<rect x={M.left} y={M.top} width={Math.max(width - M.left - M.right, 0)} height={height - M.top - M.bottom} />
@@ -185,9 +192,31 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 	);
 }
 
-function Label({ left, top, tex }: { left: number; top: number; tex: string }) {
+/** A one-line description for screen readers: the axes and the labelled items. */
+function describe(plot: Plot) {
+	const labels = plot.items.flatMap((item) => (item.label ? [item.label] : []));
+	const range = (r: [number, number]) => `de ${fmt(r[0])} a ${fmt(r[1])}`;
+	return `Gráfico, x ${range(plot.xDomain)}, y ${range(plot.yDomain)}${labels.length ? `: ${labels.join("; ")}` : ""}`;
+}
+
+/** A label beside the x it names; past three quarters of the width it sits on the left. */
+function Label({
+	at,
+	gap,
+	top,
+	width,
+	tex,
+}: {
+	at: number;
+	gap: number;
+	top: number;
+	width: number;
+	tex: string;
+}) {
+	const flip = at > width * 0.75;
+	const style = flip ? { right: width - at + gap, top } : { left: at + gap, top };
 	return (
-		<span className="plot-label" style={{ left, top }}>
+		<span className="plot-label" style={style}>
 			<Tex tex={tex} />
 		</span>
 	);

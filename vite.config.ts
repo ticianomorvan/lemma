@@ -15,7 +15,7 @@ export default defineConfig({
 		rolldownOptions: {
 			input: {
 				main: "src/client/index.html",
-				blocks: "src/client/prototypes/blocks.html",
+				blocks: "src/client/fixtures/blocks.html",
 			},
 		},
 	},
