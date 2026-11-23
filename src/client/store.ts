@@ -6,7 +6,10 @@
  * - Events with `seq <= snapshot.seq` are already in the snapshot and dropped.
  * - A gap in `seq`, or a new `epoch` (the server restarted), re-subscribes,
  *   which brings a fresh snapshot.
- * - A dropped socket reconnects with backoff and re-subscribes.
+ * - A dropped socket reconnects with backoff and re-subscribes, unless this
+ *   browser was unpaired: the server closes a revoked device's sockets with
+ *   1008 and refuses its upgrades with 403, which a socket only sees as a
+ *   close before opening, so that case asks `/api/state`.
  */
 import { useSyncExternalStore } from "react";
 import {
@@ -15,6 +18,7 @@ import {
 	type SessionView,
 } from "../shared/protocol.ts";
 import { apply } from "../shared/reducer.ts";
+import { isUnpaired } from "./unpaired.ts";
 
 /** A message this client sent that the server hasn't broadcast back yet. */
 export type Outgoing = {
@@ -25,8 +29,11 @@ export type Outgoing = {
 };
 
 export type SessionState = {
-	/** `connecting` until the first snapshot; `offline` while reconnecting. */
-	connection: "connecting" | "live" | "offline" | "missing";
+	/**
+	 * `connecting` until the first snapshot; `offline` while reconnecting;
+	 * `unpaired` once the server refuses this browser (it stops retrying).
+	 */
+	connection: "connecting" | "live" | "offline" | "missing" | "unpaired";
 	view?: SessionView;
 	outgoing: Outgoing[];
 };
@@ -72,6 +79,7 @@ export class SessionStore {
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify(body),
 			});
+			if (await isUnpaired(res)) this.unpaired();
 			if (!res.ok) throw new Error(await errorMessage(res));
 		} catch (error) {
 			this.set({
@@ -113,18 +121,33 @@ export class SessionStore {
 	private connect() {
 		const socket = new WebSocket(this.url);
 		this.socket = socket;
+		let opened = false;
 		socket.onopen = () => {
+			opened = true;
 			this.retry = 0;
 			this.resubscribe();
 		};
 		socket.onmessage = (event) => this.receive(String(event.data));
-		socket.onclose = () => {
+		socket.onclose = (event) => {
 			if (this.socket !== socket || this.closed) return;
+			if (event.code === REVOKED) return this.unpaired();
+			if (!opened) void this.checkPaired();
 			this.set({ connection: this.state.view ? "offline" : "connecting" });
 			// 0.25 s, 0.5 s, 1 s … up to 5 s.
 			const delay = Math.min(5000, 250 * 2 ** this.retry++);
 			this.retryTimer = setTimeout(() => this.connect(), delay);
 		};
+	}
+
+	/** Asks whether a refused upgrade was a 403 (unpaired) or the server being down. */
+	private async checkPaired() {
+		const res = await fetch("/api/state").catch(() => null);
+		if (res && (await isUnpaired(res))) this.unpaired();
+	}
+
+	private unpaired() {
+		this.close();
+		this.set({ connection: "unpaired" });
 	}
 
 	private resubscribe() {
@@ -180,6 +203,9 @@ export class SessionStore {
 		for (const listener of this.listeners) listener();
 	}
 }
+
+/** The close code the server sends a revoked device's sockets (policy violation). */
+const REVOKED = 1008;
 
 function sentIds(view: SessionView) {
 	const ids = new Set<string>();

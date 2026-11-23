@@ -1,6 +1,8 @@
 /**
  * The app shell: one session at a time, addressed by its URL (`/s/<id>`), so
  * every client that opens the same URL sees the same thread.
+ * - A browser that isn't paired gets the pairing screen (the server refuses
+ *   it everything else), and so does a used or expired `/pair/<code>` link.
  * - Until the study folder is chosen, the first-run screen.
  * - `/` reopens the session used last, or starts one when there is none.
  */
@@ -12,11 +14,14 @@ import type {
 	SessionMeta,
 	StateResponse,
 } from "../shared/protocol.ts";
+import { DevicesMenu } from "./devices-menu.tsx";
 import { FolderSetup } from "./folder-setup.tsx";
+import { isPairingPath, PairingScreen } from "./pairing.tsx";
 import { SessionsMenu } from "./sessions-menu.tsx";
 import { SessionStore, useSession } from "./store.ts";
 import type { ThreadActions } from "./thread/model.ts";
 import { Thread } from "./thread/thread.tsx";
+import { isUnpaired } from "./unpaired.ts";
 
 /** The course a new session goes in when the folder has none yet. */
 const FIRST_COURSE = "general";
@@ -24,10 +29,21 @@ const FIRST_COURSE = "general";
 const sessionFromPath = () =>
 	/^\/s\/([\w-]+)$/.exec(location.pathname)?.[1] ?? null;
 
+/** The server answered 403 `unpaired`: this browser has no valid device cookie. */
+class Unpaired extends Error {}
+
 export function ChatApp() {
 	const [id, setId] = useState(sessionFromPath);
 	const [meta, setMeta] = useState<SessionMeta>();
-	const [screen, setScreen] = useState<"app" | "setup" | "failed">("app");
+	const [screen, setScreen] = useState<
+		"app" | "setup" | "failed" | "unpaired" | "expired"
+	>(isPairingPath() ? "expired" : "app");
+	/** On the expired-link screen: whether this browser is paired anyway (undefined while asking). */
+	const [paired, setPaired] = useState<boolean>();
+	const unpair = useCallback(() => {
+		history.replaceState(null, "", "/");
+		setScreen("unpaired");
+	}, []);
 	const [attempt, setAttempt] = useState(0);
 	const forget = useCallback(() => open(null, setId, "replace"), []);
 	const retry = useCallback(() => {
@@ -42,6 +58,7 @@ export function ChatApp() {
 			try {
 				const state = await loadState();
 				if (cancelled) return;
+				if (isPairingPath()) return setPaired(true);
 				if (state.folder === null) return setScreen("setup");
 				if (id) return;
 				const latest = state.sessions.toSorted((a, b) =>
@@ -50,8 +67,10 @@ export function ChatApp() {
 				const target =
 					latest?.id ?? (await createSession(state.courses[0] ?? FIRST_COURSE));
 				if (!cancelled) open(target, setId, "replace");
-			} catch {
-				if (!cancelled) setScreen("failed");
+			} catch (error) {
+				if (cancelled) return;
+				if (isPairingPath()) return setPaired(false);
+				setScreen(error instanceof Unpaired ? "unpaired" : "failed");
 			}
 		})();
 		return () => {
@@ -71,10 +90,24 @@ export function ChatApp() {
 				open(created, setId, "push");
 				return true;
 			},
-			() => false,
+			(error) => {
+				if (error instanceof Unpaired) unpair();
+				return false;
+			},
 		);
 
-	if (screen === "setup") return <FolderSetup onDone={retry} />;
+	if (screen === "setup") {
+		return <FolderSetup onDone={retry} onUnpaired={unpair} />;
+	}
+	if (screen === "expired") {
+		// Rendered once the state answers, so the card doesn't swap its text.
+		return paired === undefined ? null : (
+			<PairingScreen kind="expired" paired={paired} />
+		);
+	}
+	if (screen === "unpaired") {
+		return <PairingScreen kind="unpaired" onRetry={retry} />;
+	}
 
 	return (
 		<div className="grid h-dvh grid-rows-[48px_1fr]">
@@ -94,6 +127,7 @@ export function ChatApp() {
 					onCreate={start}
 				/>
 				<span className="flex-1" />
+				<DevicesMenu onUnpaired={unpair} />
 				<button
 					type="button"
 					onClick={() => void start(meta?.course ?? FIRST_COURSE)}
@@ -105,7 +139,13 @@ export function ChatApp() {
 			</header>
 			<main className="min-h-0">
 				{id ? (
-					<Session key={id} id={id} onMissing={forget} onMeta={setMeta} />
+					<Session
+						key={id}
+						id={id}
+						onMissing={forget}
+						onUnpaired={unpair}
+						onMeta={setMeta}
+					/>
 				) : screen === "failed" ? (
 					<div className="grid h-full place-content-center justify-items-center gap-3 text-center text-sm text-muted-foreground">
 						<p>No se pudo conectar con el servidor de Lemma.</p>
@@ -126,10 +166,12 @@ export function ChatApp() {
 function Session({
 	id,
 	onMissing,
+	onUnpaired,
 	onMeta,
 }: {
 	id: string;
 	onMissing: () => void;
+	onUnpaired: () => void;
 	onMeta: (meta: SessionMeta) => void;
 }) {
 	// Made in an effect, not during render, so StrictMode's second mount gets
@@ -141,17 +183,24 @@ function Session({
 		return () => created.close();
 	}, [id]);
 	return store ? (
-		<Live store={store} onMissing={onMissing} onMeta={onMeta} />
+		<Live
+			store={store}
+			onMissing={onMissing}
+			onUnpaired={onUnpaired}
+			onMeta={onMeta}
+		/>
 	) : null;
 }
 
 function Live({
 	store,
 	onMissing,
+	onUnpaired,
 	onMeta,
 }: {
 	store: SessionStore;
 	onMissing: () => void;
+	onUnpaired: () => void;
 	onMeta: (meta: SessionMeta) => void;
 }) {
 	const state = useSession(store);
@@ -167,7 +216,9 @@ function Live({
 	// A session whose file is gone (deleted or moved): fall back to `/`.
 	useEffect(() => {
 		if (state.connection === "missing") onMissing();
-	}, [state.connection, onMissing]);
+		// Revoked, here or from another device.
+		if (state.connection === "unpaired") onUnpaired();
+	}, [state.connection, onMissing, onUnpaired]);
 
 	const meta = state.view?.meta;
 	useEffect(() => {
@@ -191,6 +242,7 @@ function Live({
 
 async function loadState(): Promise<StateResponse> {
 	const res = await fetch("/api/state");
+	if (await isUnpaired(res)) throw new Unpaired();
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	return (await res.json()) as StateResponse;
 }
@@ -201,6 +253,7 @@ async function createSession(course: string): Promise<string> {
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ course }),
 	});
+	if (await isUnpaired(res)) throw new Unpaired();
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	return ((await res.json()) as CreateSessionResponse).id;
 }

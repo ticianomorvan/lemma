@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./fixtures.ts";
 
 /** A fresh session per test, so parallel tests never share a thread. */
 async function openSession(page: Page) {
@@ -95,12 +95,9 @@ test("a failed turn shows the error and can be asked again", async ({
 	).toHaveCount(2);
 });
 
-test("two clients on one session see the same thread", async ({
-	page,
-	browser,
-}) => {
+test("two clients on one session see the same thread", async ({ page }) => {
 	const id = await openSession(page);
-	const other = await browser.newPage();
+	const other = await page.context().newPage();
 	await other.goto(`/s/${id}`);
 	await ask(page, "Hola desde el primero");
 	await expect(

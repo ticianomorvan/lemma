@@ -206,10 +206,8 @@ test("bad input gets a 400, non-JSON a 415 and an unknown session a 404", async 
 	expect(missing.status).toBe(404);
 	expect((await api("/api/sessions/nope")).status).toBe(404);
 	expect((await api("/api/nothing")).status).toBe(404);
-	const form = await fetch(new URL("/api/sessions", server.url), {
-		method: "POST",
-		headers: { "content-type": "text/plain" },
-		body: JSON.stringify({ course: "x" }),
+	const form = await api("/api/sessions", { course: "x" }, "POST", {
+		"content-type": "text/plain",
 	});
 	expect(form.status).toBe(415);
 

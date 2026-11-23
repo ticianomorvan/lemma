@@ -85,7 +85,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 
 ### 4. Auth and pairing (loopback)
 - **What:** device tokens (stored hashed, as an `HttpOnly` cookie), Host and Origin checks, and pairing codes.
-- **Startup:** `bun run start` opens `/pair/<code>` for the desktop.
+- **Startup:** `bun run start` prints and opens `/pair/<code>` for the desktop. `POST /api/pair`, `GET /api/devices` and `DELETE /api/devices/:id`, with a device list in the header.
 - **Proof:** these each get a 403:
   - a request with no token;
   - a WebSocket upgrade from a foreign origin;
@@ -122,6 +122,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 
 ### 10. Phone
 - **What:** LAN mode while a device is paired, a QR code, the phone layout with a camera button, canvas downscaling, and attachments.
+- **From step 4:** LAN mode adds `http://<lan-ip>:<port>` to the Host and Origin allow-lists in `auth` and makes pairing links use it. `GET /pair/:code` redeems on open, so a chat app's link preview could spend a shared link: the QR is the path, not a pasted URL.
 - **Proof:**
   - A manual iPhone check that `capture` works over plain HTTP; do this first.
   - An integration test: pair a device, upload a photo, see it appear in every subscribed client. A revoked device gets a 403.

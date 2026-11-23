@@ -14,6 +14,7 @@ import {
 } from "../shared/protocol.ts";
 import { reduce } from "../shared/reducer.ts";
 import { FakeDriver, type FakeDriverOptions } from "./agent/fake.ts";
+import { Auth } from "./auth/auth.ts";
 import { type ServerOptions, startServer } from "./http.ts";
 
 export type Server = Awaited<ReturnType<typeof startServer>>;
@@ -33,6 +34,67 @@ export async function studyDir() {
 	return dir;
 }
 
+/** The cookie each test server's paired client sends. */
+const cookies = new WeakMap<Server, string>();
+const auths = new WeakMap<Server, Auth>();
+
+/** The `Auth` a test server was started with. */
+export const authOf = (server: Server) => auths.get(server) as Auth;
+
+/**
+ * Starts a server with its own config folder and pairs one client through
+ * `/pair/<code>`, like a browser would. `api` sends that client's cookie and
+ * Origin; pass `headers` to override them (`cookie: ""` sends none).
+ */
+export async function start({
+	configDir,
+	devOrigin,
+	...options
+}: Omit<ServerOptions, "auth"> & { configDir?: string; devOrigin?: string }) {
+	const auth = new Auth({
+		dir: configDir ?? (await studyDir()),
+		...(devOrigin ? { devOrigin } : {}),
+	});
+	const server = await startServer({ ...options, auth });
+	servers.push(server);
+	auths.set(server, auth);
+	const cookie = await pair(server);
+	cookies.set(server, cookie);
+	const api = (
+		path: string,
+		body?: unknown,
+		method?: string,
+		headers: Record<string, string> = {},
+	) =>
+		fetch(new URL(path, server.url), {
+			method: method ?? (body === undefined ? "GET" : "POST"),
+			headers: {
+				"content-type": "application/json",
+				origin: server.url.origin,
+				cookie,
+				...headers,
+			},
+			body: body === undefined ? undefined : JSON.stringify(body),
+		});
+	return { server, api, cookie };
+}
+
+/** Redeems a fresh pairing code and returns the `name=token` cookie it set. */
+export async function pair(
+	server: Server,
+	headers: Record<string, string> = {},
+) {
+	// Straight to this server, even when the link names the dev server.
+	const { pathname } = new URL(authOf(server).startPairing().url);
+	const res = await fetch(new URL(pathname, server.url), {
+		redirect: "manual",
+		headers,
+	});
+	expect(res.status).toBe(303);
+	const set = res.headers.get("set-cookie") ?? "";
+	return set.split(";")[0] as string;
+}
+
 /**
  * Starts a server and creates one session. Pass `driver` and `studyDir` from
  * an earlier call to model a restart: same folder, same saved SDK sessions.
@@ -45,25 +107,19 @@ export async function serve(
 ) {
 	const driver = reuse.driver ?? new FakeDriver(options);
 	const dir = reuse.studyDir ?? (await studyDir());
-	const server = await startServer({
+	const { server, api, cookie } = await start({
 		port: 0,
 		distDir: null,
 		driver,
 		studyDir: dir,
 		...(reuse.idleMs === undefined ? {} : { idleMs: reuse.idleMs }),
 	});
-	servers.push(server);
-	const api = (path: string, body?: unknown, method?: string) =>
-		fetch(new URL(path, server.url), {
-			method: method ?? (body === undefined ? "GET" : "POST"),
-			headers: { "content-type": "application/json" },
-			body: body === undefined ? undefined : JSON.stringify(body),
-		});
-	if (reuse.create === false) return { server, api, id: "", driver, dir };
+	if (reuse.create === false)
+		return { server, api, cookie, id: "", driver, dir };
 	const res = await api("/api/sessions", { course: "probabilidad" });
 	expect(res.status).toBe(201);
 	const { id } = (await res.json()) as { id: string };
-	return { server, api, id, driver, dir };
+	return { server, api, cookie, id, driver, dir };
 }
 
 /** Holds replay before message `index` of turn `turn` until `release()`. */
@@ -83,6 +139,20 @@ export function hold(index: number, turn = 0) {
 	};
 }
 
+/**
+ * A WebSocket to `/ws` with these headers. Bun's client takes `headers`;
+ * the DOM types, which win in this tsconfig, don't know it.
+ */
+export function socket(server: Server, headers: Record<string, string>) {
+	const BunSocket = WebSocket as unknown as new (
+		url: URL,
+		options: Bun.WebSocketOptions,
+	) => WebSocket;
+	return new BunSocket(new URL("/ws", server.url.href.replace("http", "ws")), {
+		headers,
+	});
+}
+
 export class Client {
 	readonly messages: ServerMessage[] = [];
 	private waiters: (() => void)[] = [];
@@ -95,9 +165,10 @@ export class Client {
 	}
 
 	static async subscribe(server: Server, session: string) {
-		const ws = new WebSocket(
-			new URL("/ws", server.url.href.replace("http", "ws")),
-		);
+		const ws = socket(server, {
+			cookie: cookies.get(server) ?? "",
+			origin: server.url.origin,
+		});
 		sockets.push(ws);
 		await new Promise((resolve) => (ws.onopen = resolve));
 		const client = new Client(ws);

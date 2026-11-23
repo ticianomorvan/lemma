@@ -14,9 +14,11 @@ export default defineConfig({
 		host: "127.0.0.1",
 		port: 5173,
 		strictPort: true,
-		// The Bun server checks Origin itself, so the proxy must not rewrite it.
+		// The Bun server checks Host and Origin itself, so the proxy must not
+		// rewrite them; it trusts this origin in dev only.
 		proxy: {
 			"/api": api,
+			"/pair": api,
 			"/ws": { target: api, ws: true },
 		},
 	},

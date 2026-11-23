@@ -9,7 +9,7 @@ class StubSocket {
 	sent: unknown[] = [];
 	onopen?: () => void;
 	onmessage?: (e: { data: string }) => void;
-	onclose?: () => void;
+	onclose?: (e: { code: number }) => void;
 	constructor(readonly url: string) {
 		StubSocket.last = this;
 	}
@@ -108,10 +108,51 @@ test("a new epoch (server restart) re-subscribes", () => {
 
 test("a dropped socket shows offline and reconnects", async () => {
 	socket.push(snapshot(1));
-	socket.onclose?.();
+	socket.onclose?.({ code: 1006 });
 	expect(store.getSnapshot().connection).toBe("offline");
 	await Bun.sleep(300);
 	expect(StubSocket.last).not.toBe(socket);
+});
+
+test("a socket the server closes for a revoked device stops retrying", async () => {
+	socket.push(snapshot(1));
+	socket.onclose?.({ code: 1008 });
+	expect(store.getSnapshot().connection).toBe("unpaired");
+	await Bun.sleep(300);
+	expect(StubSocket.last).toBe(socket);
+});
+
+test("an upgrade refused before opening asks whether this browser is still paired", async () => {
+	const asked: string[] = [];
+	globalThis.fetch = (async (url: string) => {
+		asked.push(url);
+		return Response.json(
+			{ error: { code: "unpaired", message: "" } },
+			{ status: 403 },
+		);
+	}) as unknown as typeof fetch;
+	socket.onclose?.({ code: 1006 });
+	await Bun.sleep(300);
+	// The reconnect attempt is refused: it closes without ever opening.
+	const retry = StubSocket.last;
+	expect(retry).not.toBe(socket);
+	retry.onclose?.({ code: 1006 });
+	await Bun.sleep(0);
+	expect(asked).toEqual(["/api/state"]);
+	expect(store.getSnapshot().connection).toBe("unpaired");
+});
+
+test("an upgrade refused while the server is down keeps retrying", async () => {
+	globalThis.fetch = (async () => {
+		throw new Error("connection refused");
+	}) as unknown as typeof fetch;
+	socket.onclose?.({ code: 1006 });
+	await Bun.sleep(300);
+	const retry = StubSocket.last;
+	retry.onclose?.({ code: 1006 });
+	await Bun.sleep(600);
+	expect(store.getSnapshot().connection).toBe("connecting");
+	expect(StubSocket.last).not.toBe(retry);
 });
 
 test("an unknown session is reported as missing", () => {
