@@ -38,7 +38,7 @@ describe("plot expressions", () => {
 			"x)",
 			"",
 			"y + 1",
-			"(".repeat(100) + "x" + ")".repeat(100),
+			`${"(".repeat(100)}x${")".repeat(100)}`,
 			"x+".repeat(300),
 		]) {
 			expect(() => compile(bad), bad).toThrow(ExprError);

@@ -3,16 +3,11 @@
  * expression language runs through `vega-interpreter` (no `new Function`),
  * and the loader refuses every URL, so a spec can neither run code nor fetch.
  */
-import { loader as vegaLoader, parse, View } from "vega";
+
+import { Suspense, use, useLayoutEffect, useRef, useState } from "react";
+import { parse, View, loader as vegaLoader } from "vega";
 import { expressionInterpreter } from "vega-interpreter";
-import { compile, type Config, type TopLevelSpec } from "vega-lite";
-import {
-	Suspense,
-	use,
-	useLayoutEffect,
-	useRef,
-	useState,
-} from "react";
+import { type Config, compile, type TopLevelSpec } from "vega-lite";
 import { cached } from "./cache.ts";
 import { parseSvg } from "./sanitize-svg.ts";
 import { SvgNode } from "./svg-node.tsx";
@@ -68,7 +63,12 @@ function config(): Config {
 			titleFont: font,
 			titleFontWeight: 500,
 		},
-		legend: { labelColor: muted, titleColor: ink, labelFont: font, titleFont: font },
+		legend: {
+			labelColor: muted,
+			titleColor: ink,
+			labelFont: font,
+			titleFont: font,
+		},
 		title: { color: ink, font, fontWeight: 600 },
 		header: { labelColor: muted, titleColor: ink },
 	};
@@ -76,7 +76,9 @@ function config(): Config {
 
 async function render(source: string, width: number): Promise<SVGSVGElement> {
 	if (source.length > MAX_SOURCE) {
-		throw new Error(`la especificación es demasiado larga (máx. ${MAX_SOURCE} caracteres)`);
+		throw new Error(
+			`la especificación es demasiado larga (máx. ${MAX_SOURCE} caracteres)`,
+		);
 	}
 	let spec: TopLevelSpec;
 	try {
@@ -94,7 +96,11 @@ async function render(source: string, width: number): Promise<SVGSVGElement> {
 	const sized =
 		composed || "width" in spec
 			? spec
-			: ({ ...spec, width, autosize: { type: "fit-x", contains: "padding" } } as TopLevelSpec);
+			: ({
+					...spec,
+					width,
+					autosize: { type: "fit-x", contains: "padding" },
+				} as TopLevelSpec);
 	const errors: string[] = [];
 	const logger = {
 		// Vega asks `level()` whether to log at all: 1 is errors only.
@@ -133,7 +139,8 @@ export default function VegaLite({ source }: { source: string }) {
 		const el = ref.current;
 		if (!el) return;
 		// Steps of 40px, so a resize re-renders only now and then.
-		const measure = () => setWidth(Math.max(240, Math.floor(el.clientWidth / 40) * 40));
+		const measure = () =>
+			setWidth(Math.max(240, Math.floor(el.clientWidth / 40) * 40));
 		measure();
 		const ro = new ResizeObserver(measure);
 		ro.observe(el);
@@ -160,7 +167,9 @@ function Chart({
 	scheme: Scheme;
 }) {
 	const svg = use(
-		cached(renders, `${scheme}\0${width}\0${source}`, () => render(source, width)),
+		cached(renders, `${scheme}\0${width}\0${source}`, () =>
+			render(source, width),
+		),
 	);
 	return <SvgNode svg={svg} className="vega" label="Gráfico de datos" />;
 }

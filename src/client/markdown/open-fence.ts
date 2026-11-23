@@ -1,6 +1,5 @@
 import type { Code, Nodes, Root } from "mdast";
 
-
 /**
  * A remark plugin: marks each fenced code block whose closing fence hasn't
  * arrived (`data-open` on its `<code>`), so a diagram still streaming in

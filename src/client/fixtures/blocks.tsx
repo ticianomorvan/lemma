@@ -35,7 +35,11 @@ const CASES: { id: string; title: string; md: string }[] = [
 }`,
 		),
 	},
-	{ id: "dot-broken", title: "dot inválido", md: fence("dot", "digraph { a -> }") },
+	{
+		id: "dot-broken",
+		title: "dot inválido",
+		md: fence("dot", "digraph { a -> }"),
+	},
 	{
 		id: "proof-valid",
 		title: "Deducción natural",
@@ -82,7 +86,10 @@ const CASES: { id: string; title: string; md: string }[] = [
 	{
 		id: "proof-broken",
 		title: "proof sin conclusión",
-		md: fence("proof", json({ conclusion: "q", premises: [{ rule: "\\to E" }] })),
+		md: fence(
+			"proof",
+			json({ conclusion: "q", premises: [{ rule: "\\to E" }] }),
+		),
 	},
 	{
 		id: "fitch-valid",
@@ -95,9 +102,21 @@ const CASES: { id: string; title: string; md: string }[] = [
 					{ formula: "\\neg q", justification: "\\text{Sup.}", depth: 2 },
 					{ formula: "p", justification: "\\text{Sup.}", depth: 3 },
 					{ formula: "q", justification: "{\\to}\\mathrm{E}\\ 1, 3", depth: 3 },
-					{ formula: "\\bot", justification: "\\neg\\mathrm{E}\\ 2, 4", depth: 3 },
-					{ formula: "\\neg p", justification: "\\neg\\mathrm{I}\\ 3\\text{–}5", depth: 2 },
-					{ formula: "\\neg q\\to\\neg p", justification: "{\\to}\\mathrm{I}\\ 2\\text{–}6", depth: 1 },
+					{
+						formula: "\\bot",
+						justification: "\\neg\\mathrm{E}\\ 2, 4",
+						depth: 3,
+					},
+					{
+						formula: "\\neg p",
+						justification: "\\neg\\mathrm{I}\\ 3\\text{–}5",
+						depth: 2,
+					},
+					{
+						formula: "\\neg q\\to\\neg p",
+						justification: "{\\to}\\mathrm{I}\\ 2\\text{–}6",
+						depth: 1,
+					},
 					{
 						formula: "(p\\to q)\\to(\\neg q\\to\\neg p)",
 						justification: "{\\to}\\mathrm{I}\\ 1\\text{–}7",
@@ -148,7 +167,9 @@ const CASES: { id: string; title: string; md: string }[] = [
 			"vega-lite",
 			json({
 				data: {
-					values: [2, 3, 3, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 7, 7, 8].map((x) => ({ x })),
+					values: [2, 3, 3, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 7, 7, 8].map((x) => ({
+						x,
+					})),
 				},
 				mark: "bar",
 				encoding: {

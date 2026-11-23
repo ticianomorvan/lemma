@@ -17,7 +17,9 @@ const renders = new Map<string, Promise<SVGSVGElement>>();
 
 async function render(source: string): Promise<SVGSVGElement> {
 	if (source.length > MAX_SOURCE) {
-		throw new Error(`el grafo es demasiado largo (máx. ${MAX_SOURCE} caracteres)`);
+		throw new Error(
+			`el grafo es demasiado largo (máx. ${MAX_SOURCE} caracteres)`,
+		);
 	}
 	viz ??= instance();
 	const svg = (await viz).renderSVGElement(source, {

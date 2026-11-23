@@ -22,6 +22,9 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 | `@stdlib/stats-base-dists-*` (15 packages, step 5) | 0.2.3–0.3.1 |
 | `react-pdf` | 11.1.0 |
 | `@viz-js/viz` | 3.31.0 |
+| `d3-scale`, `d3-shape` | 4.0.3, 3.2.1 |
+| `vega`, `vega-lite`, `vega-interpreter` | 6.4.0, 6.5.0, 2.3.2 |
+| `mermaid` | 12.3.0 |
 | `@playwright/test` | 1.65.1 |
 | `@biomejs/biome` | 2.6.8 |
 | `vite` | 8.3.8 |

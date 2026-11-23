@@ -76,8 +76,8 @@
 	overflow-y: hidden;
 	padding: 16px 14px;
 }
-.answer .block-source,
-.block-source {
+/* `.answer` beats the answer's own `pre` style. */
+.answer .block-source {
 	margin: 0;
 	padding: 10px 12px;
 	border: 0;
@@ -111,7 +111,8 @@
 	height: 120px;
 	margin: 16px 14px;
 	border-radius: 6px;
-	background: linear-gradient(
+	background:
+		linear-gradient(
 			90deg,
 			var(--secondary) 0%,
 			var(--paper) 50%,

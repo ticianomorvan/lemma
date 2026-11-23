@@ -248,7 +248,8 @@ type Token =
 
 function tokenize(source: string): Token[] {
 	const out: Token[] = [];
-	const re = /\s*(?:(\d+(?:\.\d*)?(?:e[+-]?\d+)?|\.\d+)|([a-z][a-z0-9]*)|(\*\*|[-+*/^(),]))/giy;
+	const re =
+		/\s*(?:(\d+(?:\.\d*)?(?:e[+-]?\d+)?|\.\d+)|([a-z][a-z0-9]*)|(\*\*|[-+*/^(),]))/giy;
 	let at = 0;
 	while (at < source.length) {
 		re.lastIndex = at;

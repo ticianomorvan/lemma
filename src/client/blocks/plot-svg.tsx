@@ -19,7 +19,12 @@ const COLORS = {
 } as const;
 
 /** The default colour of each kind of item, in order of appearance. */
-const SERIES = ["var(--primary)", "var(--warning)", "var(--success)", "var(--destructive)"];
+const SERIES = [
+	"var(--primary)",
+	"var(--warning)",
+	"var(--success)",
+	"var(--destructive)",
+];
 
 /** Spanish numbers: a decimal comma, a real minus sign, no float noise. */
 const fmt = (v: number) =>
@@ -36,7 +41,11 @@ export function compilePlot(plot: Plot): Compiled[] {
 	return plot.items.map((item, i) => {
 		const named = item.color ? COLORS[item.color] : undefined;
 		const takesSeries = "fn" in item || "stem" in item || "step" in item;
-		const color = named ?? (takesSeries ? (SERIES[series++ % SERIES.length] as string) : "var(--primary)");
+		const color =
+			named ??
+			(takesSeries
+				? (SERIES[series++ % SERIES.length] as string)
+				: "var(--primary)");
 		const at = (source: string) => {
 			try {
 				return compile(source);
@@ -72,7 +81,10 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 	const height = width && width < 480 ? 210 : 250;
 	const [x0, x1] = plot.xDomain;
 	const [y0, y1] = plot.yDomain;
-	const x = scaleLinear([x0, x1], [M.left, Math.max(width - M.right, M.left + 1)]);
+	const x = scaleLinear(
+		[x0, x1],
+		[M.left, Math.max(width - M.right, M.left + 1)],
+	);
 	const y = scaleLinear([y0, y1], [height - M.bottom, M.top]);
 	const xTicks = x.ticks(width < 480 ? 5 : 8);
 	const yTicks = y.ticks(5);
@@ -93,8 +105,15 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 				.x(([u]) => x(u))
 				.y(([, v]) => y(clampY(v, y0, y1)))(pts);
 			out.push(
-				<path key={k} d={d ?? ""} fill="none" stroke={color} strokeWidth={2.25}
-					strokeLinejoin="round" strokeDasharray={item.dashed ? "6 4" : undefined} />,
+				<path
+					key={k}
+					d={d ?? ""}
+					fill="none"
+					stroke={color}
+					strokeWidth={2.25}
+					strokeLinejoin="round"
+					strokeDasharray={item.dashed ? "6 4" : undefined}
+				/>,
 			);
 		} else if ("region" in item && fn) {
 			const a = Math.max(item.region.from ?? x0, x0);
@@ -106,20 +125,46 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 					.x(([u]) => x(u))
 					.y0(baseY)
 					.y1(([, v]) => y(clampY(v, y0, y1)))(pts);
-				out.push(<path key={k} d={d ?? ""} fill={color} className="plot-region" />);
+				out.push(
+					<path key={k} d={d ?? ""} fill={color} className="plot-region" />,
+				);
 			}
 		} else if ("point" in item) {
 			const [px, py] = item.point;
 			out.push(
-				<circle key={k} cx={x(px)} cy={y(py)} r={4.5}
-					fill={item.open ? "var(--card)" : color} stroke={color} strokeWidth={1.75} />,
+				<circle
+					key={k}
+					cx={x(px)}
+					cy={y(py)}
+					r={4.5}
+					fill={item.open ? "var(--card)" : color}
+					stroke={color}
+					strokeWidth={1.75}
+				/>,
 			);
-			if (item.label) labels.push(<Label key={k} at={x(px)} gap={8} top={y(py) - 8} width={width} tex={item.label} />);
+			if (item.label)
+				labels.push(
+					<Label
+						key={k}
+						at={x(px)}
+						gap={8}
+						top={y(py) - 8}
+						width={width}
+						tex={item.label}
+					/>,
+				);
 		} else if ("stem" in item) {
 			for (const [sx, sy] of item.stem) {
 				out.push(
 					<g key={`${k}-${sx}`}>
-						<line x1={x(sx)} x2={x(sx)} y1={baseY} y2={y(sy)} stroke={color} strokeWidth={2.25} />
+						<line
+							x1={x(sx)}
+							x2={x(sx)}
+							y1={baseY}
+							y2={y(sy)}
+							stroke={color}
+							strokeWidth={2.25}
+						/>
 						<circle cx={x(sx)} cy={y(sy)} r={4} fill={color} />
 					</g>,
 				);
@@ -129,38 +174,105 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 			let prev: [number, number] = [x0, 0];
 			item.step.forEach(([sx, sy], j) => {
 				out.push(
+					// biome-ignore lint/suspicious/noArrayIndexKey: steps of a static plot
 					<g key={`${k}-${j}`}>
-						<line x1={x(prev[0])} x2={x(sx)} y1={y(prev[1])} y2={y(prev[1])} stroke={color} strokeWidth={2} />
-						<circle cx={x(sx)} cy={y(prev[1])} r={3.5} fill="var(--card)" stroke={color} strokeWidth={1.5} />
+						<line
+							x1={x(prev[0])}
+							x2={x(sx)}
+							y1={y(prev[1])}
+							y2={y(prev[1])}
+							stroke={color}
+							strokeWidth={2}
+						/>
+						<circle
+							cx={x(sx)}
+							cy={y(prev[1])}
+							r={3.5}
+							fill="var(--card)"
+							stroke={color}
+							strokeWidth={1.5}
+						/>
 						<circle cx={x(sx)} cy={y(sy)} r={3.5} fill={color} />
 					</g>,
 				);
 				prev = [sx, sy];
 			});
 			out.push(
-				<line key={`${k}-end`} x1={x(prev[0])} x2={x(x1)} y1={y(prev[1])} y2={y(prev[1])} stroke={color} strokeWidth={2} />,
+				<line
+					key={`${k}-end`}
+					x1={x(prev[0])}
+					x2={x(x1)}
+					y1={y(prev[1])}
+					y2={y(prev[1])}
+					stroke={color}
+					strokeWidth={2}
+				/>,
 			);
 		} else if ("vline" in item) {
 			out.push(
-				<line key={k} x1={x(item.vline)} x2={x(item.vline)} y1={y(y0)} y2={M.top}
-					stroke="var(--muted-foreground)" strokeWidth={1.25} strokeDasharray="4 3" />,
+				<line
+					key={k}
+					x1={x(item.vline)}
+					x2={x(item.vline)}
+					y1={y(y0)}
+					y2={M.top}
+					stroke="var(--muted-foreground)"
+					strokeWidth={1.25}
+					strokeDasharray="4 3"
+				/>,
 			);
-			if (item.label) labels.push(<Label key={k} at={x(item.vline)} gap={5} top={M.top - 2} width={width} tex={item.label} />);
+			if (item.label)
+				labels.push(
+					<Label
+						key={k}
+						at={x(item.vline)}
+						gap={5}
+						top={M.top - 2}
+						width={width}
+						tex={item.label}
+					/>,
+				);
 		}
 	});
 
 	return (
 		<div ref={ref} className="plot-svg">
 			{width > 0 && (
-				<svg width={width} height={height} role="img" aria-label={describe(plot)}>
+				<svg
+					width={width}
+					height={height}
+					role="img"
+					aria-label={describePlot(plot)}
+				>
 					<defs>
 						<clipPath id={clipId}>
-							<rect x={M.left} y={M.top} width={Math.max(width - M.left - M.right, 0)} height={height - M.top - M.bottom} />
+							<rect
+								x={M.left}
+								y={M.top}
+								width={Math.max(width - M.left - M.right, 0)}
+								height={height - M.top - M.bottom}
+							/>
 						</clipPath>
 					</defs>
 					<g className="plot-grid">
-						{xTicks.map((t) => <line key={`gx${t}`} x1={x(t)} x2={x(t)} y1={M.top} y2={height - M.bottom} />)}
-						{yTicks.map((t) => <line key={`gy${t}`} x1={M.left} x2={width - M.right} y1={y(t)} y2={y(t)} />)}
+						{xTicks.map((t) => (
+							<line
+								key={`gx${t}`}
+								x1={x(t)}
+								x2={x(t)}
+								y1={M.top}
+								y2={height - M.bottom}
+							/>
+						))}
+						{yTicks.map((t) => (
+							<line
+								key={`gy${t}`}
+								x1={M.left}
+								x2={width - M.right}
+								y1={y(t)}
+								y2={y(t)}
+							/>
+						))}
 					</g>
 					<g className="plot-axis">
 						<line x1={M.left} x2={width - M.right} y1={baseY} y2={baseY} />
@@ -168,10 +280,19 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 					</g>
 					<g className="plot-ticks">
 						{xTicks.map((t) => (
-							<text key={`tx${t}`} x={x(t)} y={height - M.bottom + 16} textAnchor="middle">{fmt(t)}</text>
+							<text
+								key={`tx${t}`}
+								x={x(t)}
+								y={height - M.bottom + 16}
+								textAnchor="middle"
+							>
+								{fmt(t)}
+							</text>
 						))}
 						{yTicks.map((t) => (
-							<text key={`ty${t}`} x={M.left - 6} y={y(t) + 4} textAnchor="end">{fmt(t)}</text>
+							<text key={`ty${t}`} x={M.left - 6} y={y(t) + 4} textAnchor="end">
+								{fmt(t)}
+							</text>
 						))}
 					</g>
 					<g clipPath={`url(#${clipId})`}>{out}</g>
@@ -179,12 +300,18 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 			)}
 			{labels}
 			{plot.xLabel && (
-				<span className="plot-axis-label" style={{ right: M.right, top: baseY - 22 }}>
+				<span
+					className="plot-axis-label"
+					style={{ right: M.right, top: baseY - 22 }}
+				>
 					<Tex tex={plot.xLabel} />
 				</span>
 			)}
 			{plot.yLabel && (
-				<span className="plot-axis-label" style={{ left: M.left + 6, top: M.top - 4 }}>
+				<span
+					className="plot-axis-label"
+					style={{ left: M.left + 6, top: M.top - 4 }}
+				>
 					<Tex tex={plot.yLabel} />
 				</span>
 			)}
@@ -193,7 +320,7 @@ export function PlotSvg({ plot, items }: { plot: Plot; items: Compiled[] }) {
 }
 
 /** A one-line description for screen readers: the axes and the labelled items. */
-function describe(plot: Plot) {
+function describePlot(plot: Plot) {
 	const labels = plot.items.flatMap((item) => (item.label ? [item.label] : []));
 	const range = (r: [number, number]) => `de ${fmt(r[0])} a ${fmt(r[1])}`;
 	return `Gráfico, x ${range(plot.xDomain)}, y ${range(plot.yDomain)}${labels.length ? `: ${labels.join("; ")}` : ""}`;
@@ -214,7 +341,9 @@ function Label({
 	tex: string;
 }) {
 	const flip = at > width * 0.75;
-	const style = flip ? { right: width - at + gap, top } : { left: at + gap, top };
+	const style = flip
+		? { right: width - at + gap, top }
+		: { left: at + gap, top };
 	return (
 		<span className="plot-label" style={style}>
 			<Tex tex={tex} />

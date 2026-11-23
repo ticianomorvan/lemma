@@ -19,7 +19,9 @@ let seq = 0;
 function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
 	const run = queue.then(async () => {
 		if (source.length > MAX_SOURCE) {
-			throw new Error(`el diagrama es demasiado largo (máx. ${MAX_SOURCE} caracteres)`);
+			throw new Error(
+				`el diagrama es demasiado largo (máx. ${MAX_SOURCE} caracteres)`,
+			);
 		}
 		mermaid.initialize({
 			startOnLoad: false,

@@ -31,8 +31,9 @@ const components: Components = {
 		if (code?.type !== "element") return <pre>{children}</pre>;
 		const className = code.properties.className;
 		const lang = Array.isArray(className)
-			? String(className.find((c) => String(c).startsWith("language-")) ?? "")
-					.slice("language-".length)
+			? String(
+					className.find((c) => String(c).startsWith("language-")) ?? "",
+				).slice("language-".length)
 			: "";
 		if (lang === PENDING_MATH) {
 			return <div className="math-pending">{children}</div>;

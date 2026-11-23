@@ -12,9 +12,14 @@ export default defineConfig({
 	build: {
 		outDir: "../../dist",
 		emptyOutDir: true,
+		// Graphviz (WASM inlined), Vega and Mermaid's layout engines are lazy
+		// chunks of 0.6–1.5 MB that load only for a block of their kind. The
+		// first load has its own budget, checked in e2e/blocks.pw.ts.
+		chunkSizeWarningLimit: 1600,
 		rolldownOptions: {
 			input: {
 				main: "src/client/index.html",
+				// The diagram fixture page Playwright checks (no data, no API).
 				blocks: "src/client/fixtures/blocks.html",
 			},
 		},

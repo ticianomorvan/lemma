@@ -34,8 +34,7 @@ export default function Fitch({ source }: { source: string }) {
 function lines(fitch: FitchProof) {
 	return fitch.lines.map((l, i) => {
 		const prev = fitch.lines[i - 1];
-		const opens =
-			l.assumption ?? (prev ? l.depth > prev.depth : l.depth > 0);
+		const opens = l.assumption ?? (prev ? l.depth > prev.depth : l.depth > 0);
 		return { ...l, n: i + 1, opens };
 	});
 }

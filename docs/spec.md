@@ -85,7 +85,7 @@ study/
 
   | Block | Renders with | For |
   |---|---|---|
-  | `plot` | our JSON schema → Mafs or JSXGraph (spike picks one) | function graphs, Cartesian axes, points, shaded areas under a density, CDF step functions, PMF stem plots |
+  | `plot` | our JSON schema → our own SVG (`d3-scale`, `d3-shape`) | function graphs, Cartesian axes, points, shaded areas under a density, CDF step functions, PMF stem plots |
   | `vega-lite` | Vega-Lite | histograms, box plots, scatter plots of data |
   | `proof` | our JSON schema → nested KaTeX in a CSS tree layout | natural deduction trees and sequent calculus derivations (Gentzen style) |
   | `fitch` | our JSON schema → KaTeX lines with nested scope bars | Fitch-style proofs, if the course uses them |
@@ -94,11 +94,12 @@ study/
   | `typst` | typst.ts, lazy-loaded (~12 MB, cached) | Typst snippets, previews of `.typ` notes |
 
 - **Why `proof` and `fitch` are our own blocks.** KaTeX has no `bussproofs`, the usual LaTeX package for proof trees, so Claude can't write them as math. Truth tables need nothing special: they are Markdown tables with inline math, and KaTeX covers the logic symbols (`\vdash`, `\models`, `\forall`, `\neg`, `\to`).
-  - `proof` schema: `{conclusion, rule, premises:[…], discharged?}`, with every formula as LaTeX.
-  - `fitch` schema: `{lines:[{formula, justification, depth}]}`.
-- The `plot` schema, for example `{xDomain, yDomain, items:[{fn:"sin(x)"}, {point:[1,2], label:"P"}, {region:{fn, from, to}}, {stem:[[0,0.1],[1,0.3]]}]}`.
-  - It gets parsed with a safe math expression parser, never `eval`.
-  - A block that fails to parse shows its source and the error inline.
+  - `proof` schema: `{conclusion, rule?, premises?:[…], discharged?}`, with every formula as LaTeX. A node without `premises` is an assumption; on it, `discharged` is the label of a discharged assumption (`[A]¹`), and on a rule it is the label that rule discharges (`→I¹`). An axiom with a line above it has `premises: []`.
+  - `fitch` schema: `{lines:[{formula, justification?, depth, assumption?}]}`. `depth` 0 is the main proof. `assumption` marks a line that opens a subproof (or a premise at depth 0); without it, a line deeper than the one before opens one. The flag is what tells two subproofs in a row at the same depth apart.
+- The `plot` schema: `{xDomain, yDomain, xLabel?, yLabel?, items:[…]}`, with both domains required. Items: `{fn, from?, to?, dashed?}`, `{point:[x,y], open?}`, `{region:{fn, from, to}}` (`null` runs to the edge), `{stem:[[x,y],…]}` (a PMF), `{step:[[x,F(x)],…]}` (a CDF), `{vline:x}`. Every item takes `label?` (LaTeX) and `color?` (`primary`, `warning`, `success`, `destructive`, `muted`).
+  - Expressions go through our own parser (`client/blocks/expr.ts`): `x`, numbers, `pi`, `e`, `+ - * / ^`, and an allow-list of functions including `normpdf`, `normcdf`, `tpdf`, `chi2pdf`. It builds a tree and evaluates it; nothing reaches `eval` or `Function`.
+  - A block that fails to parse or render shows its source and the error inline. A block whose closing fence hasn't arrived shows its source, so a half-received block never flashes an error.
+- **Chosen in step 6 from prototypes:** the Tarjeta look for every block (a card with a label, the body, and the source on demand). For `plot`, our own SVG won over Mafs (21 kB gzipped, unmaintained since 2024, blocks touch scrolling) and JSXGraph (280 kB, imperative, its own script language). uPlot and Chart.js draw on a canvas and fit shaded regions badly. Observable Plot (101 kB) overlaps the `vega-lite` block. function-plot compiles expressions with `new Function`.
 - **Rejected: Desmos.** It needs an API key and its terms are restrictive.
 
 **PDF pane.**

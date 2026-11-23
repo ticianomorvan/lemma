@@ -72,7 +72,7 @@ export function sanitizeSvg<T extends Element>(root: T): T {
 	const clean = (el: Element) => {
 		for (const attr of [...el.attributes]) {
 			const name = attr.name.toLowerCase();
-			const value = attr.value.replace(/[\s\u0000-\u001f]/g, "").toLowerCase();
+			const value = attr.value.replace(/[\s\p{Cc}]/gu, "").toLowerCase();
 			if (
 				name.startsWith("on") ||
 				name === "href" ||
@@ -91,7 +91,10 @@ export function sanitizeSvg<T extends Element>(root: T): T {
 		if (el.localName === "style") {
 			// Inline <style> may import or fetch; keep only self-contained rules.
 			const css = el.textContent ?? "";
-			if (/@import|expression\(|javascript:/i.test(css) || !localUrls(css.replace(/\s/g, "").toLowerCase())) {
+			if (
+				/@import|expression\(|javascript:/i.test(css) ||
+				!localUrls(css.replace(/\s/g, "").toLowerCase())
+			) {
 				el.remove();
 			}
 		}
