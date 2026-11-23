@@ -4,25 +4,16 @@
  * output, so a theme change renders again.
  */
 import mermaid from "mermaid";
-import { use } from "react";
-import { cached } from "./cache.ts";
 import { parseSvg } from "./sanitize-svg.ts";
-import { SvgNode } from "./svg-node.tsx";
+import { SvgBlock } from "./svg-node.tsx";
 import { type Scheme, token, useScheme } from "./theme.ts";
 
-const MAX_SOURCE = 20_000;
-const renders = new Map<string, Promise<SVGSVGElement>>();
 /** Mermaid keeps global config, so renders take turns. */
 let queue: Promise<unknown> = Promise.resolve();
 let seq = 0;
 
 function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
 	const run = queue.then(async () => {
-		if (source.length > MAX_SOURCE) {
-			throw new Error(
-				`el diagrama es demasiado largo (máx. ${MAX_SOURCE} caracteres)`,
-			);
-		}
 		mermaid.initialize({
 			startOnLoad: false,
 			securityLevel: "strict",
@@ -62,12 +53,11 @@ function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
 
 export default function Mermaid({ source }: { source: string }) {
 	const scheme = useScheme();
-	const svg = use(
-		cached(renders, `${scheme}\0${source}`, () => render(source, scheme)),
-	);
 	return (
-		<div className="block-scroll">
-			<SvgNode svg={svg} className="mermaid" label="Diagrama" />
-		</div>
+		<SvgBlock
+			kind="mermaid"
+			cacheKey={`${scheme}\0${source}`}
+			render={() => render(source, scheme)}
+		/>
 	);
 }

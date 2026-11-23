@@ -4,23 +4,13 @@
  * without re-rendering; colours the source sets itself are kept.
  */
 import { instance, type Viz } from "@viz-js/viz";
-import { use } from "react";
-import { cached } from "./cache.ts";
 import { sanitizeSvg } from "./sanitize-svg.ts";
-import { SvgNode } from "./svg-node.tsx";
+import { SvgBlock } from "./svg-node.tsx";
 
-const MAX_SOURCE = 20_000;
 const FONT = "Helvetica,Arial,sans-serif";
-
 let viz: Promise<Viz> | undefined;
-const renders = new Map<string, Promise<SVGSVGElement>>();
 
 async function render(source: string): Promise<SVGSVGElement> {
-	if (source.length > MAX_SOURCE) {
-		throw new Error(
-			`el grafo es demasiado largo (máx. ${MAX_SOURCE} caracteres)`,
-		);
-	}
 	viz ??= instance();
 	const svg = (await viz).renderSVGElement(source, {
 		graphAttributes: { bgcolor: "transparent", fontname: FONT },
@@ -39,10 +29,7 @@ async function render(source: string): Promise<SVGSVGElement> {
 }
 
 export default function Dot({ source }: { source: string }) {
-	const svg = use(cached(renders, source, () => render(source)));
 	return (
-		<div className="block-scroll">
-			<SvgNode svg={svg} className="dot" label="Grafo" />
-		</div>
+		<SvgBlock kind="dot" cacheKey={source} render={() => render(source)} />
 	);
 }

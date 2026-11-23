@@ -5,6 +5,11 @@
  * ever reaches `eval` or `Function`.
  */
 
+import chi2pdf from "@stdlib/stats-base-dists-chisquare-pdf";
+import normalCdf from "@stdlib/stats-base-dists-normal-cdf";
+import normalPdf from "@stdlib/stats-base-dists-normal-pdf";
+import tpdf from "@stdlib/stats-base-dists-t-pdf";
+
 export type Fn = (x: number) => number;
 
 type Node =
@@ -14,48 +19,11 @@ type Node =
 	| { t: "bin"; op: "+" | "-" | "*" | "/" | "^"; a: Node; b: Node }
 	| { t: "call"; f: (...args: number[]) => number; args: Node[] };
 
-const SQRT2PI = Math.sqrt(2 * Math.PI);
-
-/** Abramowitz–Stegun 7.1.26, |error| < 1.5e-7: plenty for a plot. */
-function erf(x: number): number {
-	const s = Math.sign(x);
-	const t = 1 / (1 + 0.3275911 * Math.abs(x));
-	const y =
-		1 -
-		((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) *
-			t +
-			0.254829592) *
-			t *
-			Math.exp(-x * x);
-	return s * y;
-}
-
-/** Lanczos approximation (g = 7), for the t and χ² densities. */
-function gamma(z: number): number {
-	if (z < 0.5) return Math.PI / (Math.sin(Math.PI * z) * gamma(1 - z));
-	const c = [
-		0.9999999999998099, 676.5203681218851, -1259.1392167224028,
-		771.3234287776531, -176.6150291621406, 12.507343278686905,
-		-0.13857109526572012, 9.984369578019572e-6, 1.5056327351493116e-7,
-	];
-	const w = z - 1;
-	let a = c[0] as number;
-	const t = w + 7.5;
-	for (let i = 1; i < 9; i++) a += (c[i] as number) / (w + i);
-	return SQRT2PI * t ** (w + 0.5) * Math.exp(-t) * a;
-}
-
-const normpdf = (x: number, mu = 0, sigma = 1) =>
-	Math.exp(-(((x - mu) / sigma) ** 2) / 2) / (sigma * SQRT2PI);
-const normcdf = (x: number, mu = 0, sigma = 1) =>
-	(1 + erf((x - mu) / (sigma * Math.SQRT2))) / 2;
-const tpdf = (x: number, v: number) =>
-	(gamma((v + 1) / 2) / (Math.sqrt(v * Math.PI) * gamma(v / 2))) *
-	(1 + (x * x) / v) ** (-(v + 1) / 2);
-const chi2pdf = (x: number, k: number) =>
-	x < 0
-		? 0
-		: (x ** (k / 2 - 1) * Math.exp(-x / 2)) / (2 ** (k / 2) * gamma(k / 2));
+// The same stdlib functions `calc` uses (server/tools/calc), so a plot and a
+// computed answer agree to the last digit.
+const normpdf = (x: number, mu = 0, sigma = 1) => normalPdf(x, mu, sigma);
+const normcdf = (x: number, mu = 0, sigma = 1) => normalCdf(x, mu, sigma);
+const erf = (x: number) => 2 * normalCdf(x * Math.SQRT2, 0, 1) - 1;
 const exppdf = (x: number, lambda: number) =>
 	x < 0 ? 0 : lambda * Math.exp(-lambda * x);
 const unifpdf = (x: number, a: number, b: number) =>
@@ -87,7 +55,6 @@ const FUNCTIONS: Record<string, [(...a: number[]) => number, number, number]> =
 		min: [Math.min, 2, 8],
 		max: [Math.max, 2, 8],
 		erf: [erf, 1, 1],
-		gamma: [gamma, 1, 1],
 		normpdf: [normpdf, 1, 3],
 		normcdf: [normcdf, 1, 3],
 		tpdf: [tpdf, 2, 2],

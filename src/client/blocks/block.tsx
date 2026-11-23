@@ -1,8 +1,9 @@
 /**
- * One fenced diagram block in an answer. Each kind's renderer is its own lazy
- * chunk. A block whose fence hasn't closed shows its source (it's still
- * streaming in); a block that fails to parse or render shows its source with
- * the error, so a mistake never takes the answer down with it.
+ * One fenced diagram block in an answer, on its Tarjeta card. Each kind's
+ * renderer is its own lazy chunk. A block whose fence hasn't closed shows its
+ * source (it's still streaming in); a block that fails to parse or render
+ * shows its source with the error, so a mistake never takes the answer down
+ * with it.
  */
 import "./blocks.css";
 import { Code2 } from "lucide-react";
@@ -12,6 +13,7 @@ import {
 	lazy,
 	type ReactNode,
 	Suspense,
+	useLayoutEffect,
 	useState,
 } from "react";
 import { cn } from "#lib/utils.ts";
@@ -40,66 +42,56 @@ export function DiagramBlock({
 	/** The closing fence hasn't arrived yet. */
 	open?: boolean;
 }) {
+	const [state, setState] = useState<State>(open ? "pending" : "loading");
+	const [showSource, setShowSource] = useState(false);
+	const { label, maxSource } = BLOCK_KINDS[kind];
+	const Renderer = RENDERERS[kind];
+	const failure = (error: Error) => (
+		<Report state="error" set={setState}>
+			<p className="block-error" role="alert">
+				<span className="font-medium">No se pudo dibujar:</span> {error.message}
+			</p>
+			<pre className="block-source">{source}</pre>
+		</Report>
+	);
+	let body: ReactNode;
 	if (open) {
-		return (
-			<Frame kind={kind} state="pending" source={source}>
+		body = (
+			<Report state="pending" set={setState}>
 				<pre className="block-source">{source || " "}</pre>
-			</Frame>
+			</Report>
+		);
+	} else if (source.length > maxSource) {
+		body = failure(
+			new Error(`el bloque es demasiado largo (máx. ${maxSource} caracteres)`),
+		);
+	} else {
+		body = (
+			<Boundary key={source} fallback={failure}>
+				<Suspense
+					fallback={
+						<Report state="loading" set={setState}>
+							<div className="block-loading" />
+						</Report>
+					}
+				>
+					<Report state="ok" set={setState}>
+						<Renderer source={source} />
+					</Report>
+				</Suspense>
+			</Boundary>
 		);
 	}
-	const Renderer = RENDERERS[kind];
-	return (
-		<Boundary
-			key={source}
-			fallback={(error) => (
-				<Frame kind={kind} state="error" source={source}>
-					<p className="block-error" role="alert">
-						<span className="font-medium">No se pudo dibujar:</span>{" "}
-						{error.message}
-					</p>
-					<pre className="block-source">{source}</pre>
-				</Frame>
-			)}
-		>
-			<Suspense
-				fallback={
-					<Frame kind={kind} state="loading" source={source}>
-						<div className="block-loading" />
-					</Frame>
-				}
-			>
-				<Frame kind={kind} state="ok" source={source}>
-					<Renderer source={source} />
-				</Frame>
-			</Suspense>
-		</Boundary>
-	);
-}
-
-/** The Tarjeta card every block sits on: a label, the body, and its source on demand. */
-function Frame({
-	kind,
-	state,
-	source,
-	children,
-}: {
-	kind: BlockKind;
-	state: State;
-	source: string;
-	children: ReactNode;
-}) {
-	const [showSource, setShowSource] = useState(false);
-	const canToggle = state === "ok";
 	return (
 		<figure className="block" data-block={kind} data-state={state}>
 			<figcaption className="block-head">
 				<span className={cn("block-chip", state === "error" && "is-error")}>
-					{BLOCK_KINDS[kind]}
+					{label}
 				</span>
 				{state === "pending" && (
 					<span className="thinking-shimmer">Escribiendo…</span>
 				)}
-				{canToggle && (
+				{state === "ok" && (
 					<button
 						type="button"
 						className="block-toggle"
@@ -111,10 +103,26 @@ function Frame({
 					</button>
 				)}
 			</figcaption>
-			<div className="block-body">{children}</div>
-			{canToggle && showSource && <pre className="block-source">{source}</pre>}
+			<div className="block-body">{body}</div>
+			{state === "ok" && showSource && (
+				<pre className="block-source">{source}</pre>
+			)}
 		</figure>
 	);
+}
+
+/** Renders its children and tells the card which state is showing. */
+function Report({
+	state,
+	set,
+	children,
+}: {
+	state: State;
+	set: (s: State) => void;
+	children: ReactNode;
+}) {
+	useLayoutEffect(() => set(state), [state, set]);
+	return children;
 }
 
 class Boundary extends Component<

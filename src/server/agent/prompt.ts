@@ -28,7 +28,6 @@ export const PLOT_FUNCTIONS = [
 	"min",
 	"max",
 	"erf",
-	"gamma",
 	"normpdf(x, mu, sigma)",
 	"normcdf(x, mu, sigma)",
 	"tpdf(x, df)",

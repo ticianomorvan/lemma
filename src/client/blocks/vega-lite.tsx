@@ -4,17 +4,13 @@
  * and the loader refuses every URL, so a spec can neither run code nor fetch.
  */
 
-import { Suspense, use, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useLayoutEffect, useRef, useState } from "react";
 import { parse, View, loader as vegaLoader } from "vega";
 import { expressionInterpreter } from "vega-interpreter";
 import { type Config, compile, type TopLevelSpec } from "vega-lite";
-import { cached } from "./cache.ts";
 import { parseSvg } from "./sanitize-svg.ts";
-import { SvgNode } from "./svg-node.tsx";
+import { SvgBlock } from "./svg-node.tsx";
 import { type Scheme, token, useScheme } from "./theme.ts";
-
-const MAX_SOURCE = 100_000;
-const renders = new Map<string, Promise<SVGSVGElement>>();
 
 const NO_FETCH = "los datos van en `values`: no se cargan URLs";
 
@@ -75,11 +71,6 @@ function config(): Config {
 }
 
 async function render(source: string, width: number): Promise<SVGSVGElement> {
-	if (source.length > MAX_SOURCE) {
-		throw new Error(
-			`la especificación es demasiado larga (máx. ${MAX_SOURCE} caracteres)`,
-		);
-	}
 	let spec: TopLevelSpec;
 	try {
 		spec = JSON.parse(source);
@@ -166,10 +157,12 @@ function Chart({
 	width: number;
 	scheme: Scheme;
 }) {
-	const svg = use(
-		cached(renders, `${scheme}\0${width}\0${source}`, () =>
-			render(source, width),
-		),
+	return (
+		<SvgBlock
+			kind="vega-lite"
+			cacheKey={`${scheme}\0${width}\0${source}`}
+			render={() => render(source, width)}
+			scroll={false}
+		/>
 	);
-	return <SvgNode svg={svg} className="vega" label="Gráfico de datos" />;
 }
