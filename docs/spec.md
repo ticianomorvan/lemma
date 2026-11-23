@@ -52,7 +52,7 @@ There is no code yet, and this is a new open-source repository (MIT). Things to 
 
 **Agent configuration.**
 - `cwd` is the study folder. Allowed tools are `Read`, `Write`, `Edit`, `Glob`, `Grep` and `WebFetch`; no `Bash`.
-- **A `calc` tool**, an in-process SDK MCP tool, so probability answers aren't mental arithmetic. It evaluates expressions with mathjs (combinations, factorials, `erf`) plus a distributions library (binomial, Poisson, normal, t, χ² PDFs, CDFs and quantiles). It runs in a restricted scope, with no `eval` and no imports. The system prompt tells Claude to use it for every number it states in a worked solution.
+- **A `calc` tool**, an in-process SDK MCP tool, so probability answers aren't mental arithmetic. It evaluates expressions with mathjs (combinations, factorials, `erf`) plus a distributions library (binomial, Poisson, normal, t, χ² PDFs, CDFs and quantiles, from stdlib, named the way students write them: `binomcdf(10, 0.3, 4)`, `normcdf(1.96)`, `invt(0.975, 9)`). It runs in a restricted scope, with no `eval` and no imports. The system prompt tells Claude to use it for every number it states in a worked solution.
 - **Language.** Claude answers in the language of the question (Spanish by default for these courses) and keeps standard notation.
 - The SDK's own sessions are used for resume.
 - A system-prompt append sets the answer conventions:

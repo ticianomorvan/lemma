@@ -1,4 +1,4 @@
-import { ChevronRight, FileText } from "lucide-react";
+import { Calculator, ChevronRight, FileText } from "lucide-react";
 import { useState } from "react";
 import {
 	Collapsible,
@@ -6,7 +6,7 @@ import {
 	CollapsibleTrigger,
 } from "#components/ui/collapsible.tsx";
 import { cn } from "#lib/utils.ts";
-import type { Block, Turn } from "../../shared/protocol.ts";
+import { type Block, CALC_TOOL, type Turn } from "../../shared/protocol.ts";
 import { Markdown } from "../markdown/markdown.tsx";
 import { toolLabel, visibleBlocks } from "./model.ts";
 
@@ -33,7 +33,9 @@ export function TurnBlocks({
 						return (
 							<div
 								key={block.id}
-								className="answer"
+								// A grid item grows to fit its widest formula unless
+								// it may shrink; then `.katex-display` scrolls instead.
+								className="answer min-w-0"
 								data-streaming={live || undefined}
 							>
 								<Markdown text={block.text} />
@@ -86,6 +88,7 @@ function Thinking({ block, live }: { block: Block; live: boolean }) {
 
 function ToolRow({ block }: { block: Block }) {
 	const failed = block.result && !block.result.ok;
+	const Icon = block.name === CALC_TOOL ? Calculator : FileText;
 	return (
 		<div
 			className={cn(
@@ -94,7 +97,7 @@ function ToolRow({ block }: { block: Block }) {
 			)}
 			title={block.result?.summary}
 		>
-			<FileText aria-hidden className="size-3.5 shrink-0" />
+			<Icon aria-hidden className="size-3.5 shrink-0" />
 			<span className={cn("truncate", !block.result && "thinking-shimmer")}>
 				{toolLabel(block)}
 				{failed ? " (falló)" : ""}

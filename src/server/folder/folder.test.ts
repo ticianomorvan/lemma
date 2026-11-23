@@ -145,6 +145,11 @@ test("tool calls outside the folder are denied", () => {
 	expect(checkTool(folder, "Bash", { command: "ls" })).toContain(
 		"not available",
 	);
+	// Only `study`'s own `calc` gets past the allow-list among MCP tools.
+	expect(checkTool(folder, "mcp__study__calc", { expr: "1+1" })).toBeNull();
+	expect(checkTool(folder, "mcp__other__calc", { expr: "1+1" })).toContain(
+		"not available",
+	);
 });
 
 test("writes to the transcripts, the inbox and .claude settings are denied", () => {

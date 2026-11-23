@@ -4,10 +4,15 @@
  * the SDK approves `Read`s inside the folder on its own without asking, so the
  * hook is what makes the jail hold for every call.
  */
+
+import { CALC_TOOL } from "../../shared/protocol.ts";
 import type { Folder } from "../folder/folder.ts";
 import { writeDenied } from "../folder/layout.ts";
 
-/** The agent's tools. `Bash`, `NotebookEdit` and `Task` are also disallowed. */
+/**
+ * The agent's built-in tools, plus `calc` from the `study` MCP server.
+ * `Bash`, `NotebookEdit` and `Task` are also disallowed.
+ */
 export const TOOLS = ["Read", "Glob", "Grep", "Write", "Edit"];
 const WRITES = new Set(["Write", "Edit"]);
 
@@ -17,6 +22,8 @@ export function checkTool(
 	name: string,
 	input: Record<string, unknown>,
 ): string | null {
+	// `calc` takes no paths: the Worker it runs in is its sandbox.
+	if (name === CALC_TOOL) return null;
 	if (!TOOLS.includes(name)) return `${name} is not available in Lemma`;
 	const paths = [input.file_path, input.path].filter(
 		(p): p is string => typeof p === "string",

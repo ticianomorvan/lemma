@@ -15,6 +15,7 @@ import type {
 } from "./driver.ts";
 import { SdkMapper } from "./map.ts";
 import { CONVENTIONS } from "./prompt.ts";
+import { studyServer } from "./study.ts";
 import { checkTool, TOOLS } from "./tools.ts";
 
 /** Runs Claude with the Agent SDK: one streaming `query()` per session. */
@@ -93,6 +94,7 @@ export function sdkOptions(
 		// empty. The thread shows them folded under a "Pensando" row.
 		thinking: { type: "adaptive", display: "summarized" },
 		tools: TOOLS,
+		mcpServers: { study: studyServer() },
 		disallowedTools: ["Bash", "NotebookEdit", "Task"],
 		// The path jail runs on every call: the SDK approves reads inside `cwd`
 		// without calling `canUseTool`, but never skips this hook.

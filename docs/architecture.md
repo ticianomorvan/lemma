@@ -34,7 +34,7 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 | `transcript` | Markdown session file ⇄ typed entries (question, answer, note) | `parse(md) → {meta, entries}`, `appendEntry(transcript, entry)`, `read`/`write`, `bodyHash(body)` |
 | `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
 | `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({folder, resumeId?, seed?}) → Promise<{sdkSessionId, resumed, push, interrupt, close, events}>`: it resumes `resumeId` if the SDK still has it, else starts fresh with the seed |
-| `tools/calc` | in-process MCP server (`createSdkMcpServer`, `tool()`), mathjs + distributions in a Worker | `calc(expr) → value \| error` |
+| `tools/calc` | mathjs + distributions in a Worker; the in-process MCP server `study` that exposes it (`createSdkMcpServer`, `tool()`) lives in `agent/study.ts`, since only `agent` imports the SDK | `calc(expr) → value \| error` |
 | `shared` | zod protocol schemas, the event reducer, `normalize-math` (`\(…\)`/`\[…\]` to dollars and escaping currency, after assistant-ui's heuristics, outside code; plus holding an unclosed display formula as raw source) | imported by server and client, so both reduce events identically |
 | `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store (`client/store.ts`); the thread view and composer in `client/thread/`; Markdown + KaTeX in `client/markdown/` | — |
 
@@ -163,10 +163,13 @@ study/
   - It runs as a `PreToolUse` hook and again in `canUseTool`. The hook is the one that matters: confirmed live in step 3, the SDK approves `Read`s inside `cwd` without calling `canUseTool`.
   - `WebFetch` is limited to public http(s) hosts and can be switched off. The remaining risk is a PDF injecting URLs into the conversation.
 - **`calc`.**
-  - A locked mathjs instance: `import`, `createUnit`, `evaluate`, `parse`, `simplify` and `derivative` are stubbed out.
-  - Only an allow-list of distribution functions is exposed.
+  - A locked mathjs instance: `import`, `createUnit`, `evaluate`, `parse`, `simplify` and `derivative` are stubbed out, and so are `compile` and `parser` (the same reach as `evaluate`/`parse`) and `config` (it would change the instance for every later expression).
+  - Only an allow-list of distribution functions is exposed (`src/server/tools/calc/distributions.ts`, from stdlib's `@stdlib/stats-base-dists-*`), named TI-84 style: `binompdf`, `binomcdf`, `invbinom`, `poissonpdf`, `poissoncdf`, `invpoisson`, `normpdf`, `normcdf`, `invnorm`, `tpdf`, `tcdf`, `invt`, `chi2pdf`, `chi2cdf`, `invchi2`. Each CDF is P(X ≤ x) at one point.
   - Input is capped at 2 KB and output at 10 KB.
-  - Each call runs in a Worker that is killed after 1 s.
+  - Each call runs in its own Worker, killed after the call or after 1 s. Loading mathjs takes about 350 ms, so the next Worker is started as soon as one is taken, and the clock starts once it is ready. Calls run one at a time: Bun ignores Worker memory limits, and one call can allocate several GB (`zeros(1e9)`) in its second before it is killed, so this keeps that to one Worker. That brief spike is an accepted risk for a single-user local app.
+  - An expression with nothing to show (empty, or a last line ending in `;`) is an error, so Claude never gets a blank result.
+  - The hook and `canUseTool` let `mcp__study__calc` through; any other MCP tool name is refused.
+  - The Worker has Bun's full APIs and no OS sandbox, so the mathjs lockdown is the boundary: a future mathjs escape would reach the machine. Keep mathjs pinned and re-run the escape checks when it is bumped.
 - **Accepted risk.** On the LAN, a cookie sent over plain HTTP can be sniffed. This is documented, and Tailscale Serve is the hardened option.
 
 ## Stack
