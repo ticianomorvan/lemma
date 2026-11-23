@@ -169,6 +169,7 @@ study/
   - Each call runs in its own Worker, killed after the call or after 1 s. Loading mathjs takes about 350 ms, so the next Worker is started as soon as one is taken, and the clock starts once it is ready. Calls run one at a time: Bun ignores Worker memory limits, and one call can allocate several GB (`zeros(1e9)`) in its second before it is killed, so this keeps that to one Worker. That brief spike is an accepted risk for a single-user local app.
   - An expression with nothing to show (empty, or a last line ending in `;`) is an error, so Claude never gets a blank result.
   - The hook and `canUseTool` let `mcp__study__calc` through; any other MCP tool name is refused.
+  - The Worker has Bun's full APIs and no OS sandbox, so the mathjs lockdown is the boundary: a future mathjs escape would reach the machine. Keep mathjs pinned and re-run the escape checks when it is bumped.
 - **Accepted risk.** On the LAN, a cookie sent over plain HTTP can be sniffed. This is documented, and Tailscale Serve is the hardened option.
 
 ## Stack
