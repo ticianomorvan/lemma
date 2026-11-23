@@ -1,0 +1,477 @@
+/* Step 6 block prototypes. Tokens only from globals.css. */
+
+/* Shared: wide diagrams scroll inside their own box, like .katex-display. */
+.pv-scroll {
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding: 4px 2px;
+}
+.pv-card {
+	margin: 0.4em 0 0.8em;
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+}
+.pv-card-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--border);
+	font: 500 12px / 1 var(--font-sans);
+	color: var(--muted-foreground);
+}
+.pv-chip {
+	display: inline-flex;
+	white-space: nowrap;
+	align-items: center;
+	height: 22px;
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--primary-soft);
+	color: var(--primary);
+}
+.pv-hint {
+	color: var(--subtle);
+	font-weight: 400;
+}
+@media (hover: none) {
+	.pv-hint {
+		display: none;
+	}
+}
+.pv-card .pv-scroll {
+	padding: 16px 14px;
+}
+
+/* ---- proof: Clásico / Tarjeta tree ---- */
+.pt-classic {
+	display: flex;
+	justify-content: center;
+	width: max-content;
+	min-width: 100%;
+	font-size: 16px;
+	padding: 6px 0 2px;
+}
+.pt-node {
+	display: inline-grid;
+	grid-template-columns: auto auto;
+	grid-template-areas:
+		"premises ."
+		"line rule"
+		"conc .";
+	align-self: flex-end;
+}
+.pt-premises {
+	grid-area: premises;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	gap: 0 1.6em;
+	padding: 0 0.3em;
+}
+.pt-line {
+	grid-area: line;
+	height: 0;
+	border-top: 1px solid var(--foreground);
+	align-self: center;
+	margin: 3px 0;
+}
+.pt-rule {
+	grid-area: rule;
+	align-self: center;
+	padding-left: 0.35em;
+	font-size: 0.8em;
+	color: var(--muted-foreground);
+	white-space: nowrap;
+	line-height: 1;
+}
+.pt-conc {
+	grid-area: conc;
+	justify-self: center;
+	white-space: nowrap;
+	padding: 0 0.3em;
+	line-height: 1.5;
+}
+.pt-node > .pt-conc:only-child {
+	grid-row: 3;
+}
+
+/* Tarjeta tweaks */
+.pt-card .pt-line {
+	border-top: 1.5px solid var(--primary);
+}
+.pt-rule-chip {
+	margin-left: 0.25em;
+	padding: 2px 6px;
+	border-radius: 6px;
+	background: var(--secondary);
+	color: var(--foreground);
+	transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.pt-leaf[data-discharged] {
+	color: var(--muted-foreground);
+	border-radius: 6px;
+	transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.pt-leaf[data-hot],
+.pt-rule-chip[data-hot] {
+	background: var(--highlight);
+	color: var(--highlight-foreground);
+}
+
+/* ---- proof: Guiado outline ---- */
+.pv-outline {
+	margin: 0.4em 0 0.8em;
+	font-size: 16px;
+}
+.po-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 5px 0;
+	border-bottom: 1px dashed var(--border);
+}
+.po-node[data-root] > .po-row {
+	font-weight: 600;
+}
+.po-rule {
+	flex-shrink: 0;
+	font: 12.5px / 1.3 var(--font-sans);
+	color: var(--subtle);
+}
+.po-children {
+	margin-left: 9px;
+	padding-left: 14px;
+	border-left: 1.5px solid var(--input);
+}
+
+/* ---- fitch: Clásico ---- */
+.fc {
+	display: grid;
+	grid-template-columns: max-content;
+	width: max-content;
+	min-width: 100%;
+	font-size: 16px;
+	padding: 4px 0;
+}
+.fc-row {
+	display: flex;
+	align-items: stretch;
+	min-height: 2em;
+}
+.fc-n {
+	width: 2em;
+	padding-right: 0.6em;
+	text-align: right;
+	align-self: center;
+	font: 12.5px var(--font-sans);
+	font-variant-numeric: tabular-nums;
+	color: var(--subtle);
+}
+.fc-bar {
+	width: 14px;
+	flex-shrink: 0;
+	border-left: 1.5px solid var(--foreground);
+}
+.fc-f {
+	display: flex;
+	align-items: center;
+	padding: 0 1.2em 0 2px;
+	min-width: 9em;
+}
+.fc-f[data-opens] {
+	border-bottom: 1.5px solid var(--foreground);
+	align-self: flex-start;
+	min-height: 2em;
+	margin-right: 1em;
+	padding-right: 0.5em;
+	min-width: calc(9em - 1em);
+}
+.fc-j {
+	display: flex;
+	align-items: center;
+	margin-left: auto;
+	padding-left: 1.5em;
+	font-size: 0.85em;
+	color: var(--muted-foreground);
+}
+
+/* ---- fitch: Tarjeta ---- */
+.fk {
+	display: grid;
+	width: max-content;
+	min-width: 100%;
+	font-size: 16px;
+}
+.fk-row {
+	display: flex;
+	align-items: stretch;
+	min-height: 2.1em;
+}
+.fk-row + .fk-row {
+	border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+.fk-n {
+	width: 1.8em;
+	align-self: center;
+	text-align: right;
+	padding-right: 0.7em;
+	font: 12.5px var(--font-sans);
+	font-variant-numeric: tabular-nums;
+	color: var(--subtle);
+}
+.fk-band {
+	width: 16px;
+	flex-shrink: 0;
+	border-left: 2px solid var(--primary);
+	background: color-mix(in oklab, var(--primary) 7%, transparent);
+}
+.fk-band[data-d="1"] {
+	border-left-color: color-mix(in oklab, var(--primary) 70%, var(--success));
+}
+.fk-band[data-d="2"] {
+	border-left-color: color-mix(in oklab, var(--primary) 40%, var(--success));
+}
+.fk-f {
+	display: flex;
+	align-items: center;
+	padding: 0 1.5em 0 8px;
+	flex: 1;
+}
+.fk-j {
+	display: flex;
+	align-items: center;
+	padding: 0 10px;
+	font-size: 0.8em;
+	color: var(--muted-foreground);
+}
+.fk-j[data-opens] > span {
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: var(--highlight);
+	color: var(--highlight-foreground);
+}
+
+/* ---- fitch: Guiado ---- */
+.fg {
+	display: grid;
+	margin: 0.4em 0 0.8em;
+	font-size: 16px;
+}
+.fg-row {
+	display: flex;
+	align-items: stretch;
+	text-align: left;
+	border-radius: 6px;
+	transition: background-color 120ms var(--ease-out);
+	-webkit-tap-highlight-color: transparent;
+}
+.fg-row:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: -2px;
+}
+.fg-row[data-hot] {
+	background: var(--secondary);
+}
+.fg-row[data-cited] {
+	background: var(--highlight);
+	color: var(--highlight-foreground);
+}
+.fg-row[data-cited] .fg-j {
+	color: inherit;
+}
+.fg-n {
+	width: 2em;
+	padding: 6px 0.6em 0 0;
+	text-align: right;
+	font: 12.5px var(--font-sans);
+	font-variant-numeric: tabular-nums;
+	color: var(--subtle);
+}
+.fg-body {
+	display: flex;
+	flex-direction: column;
+	padding: 4px 8px 5px 4px;
+	min-width: 0;
+}
+.fg-body[data-opens] {
+	border-bottom: 1.5px solid var(--foreground);
+}
+.fg-j {
+	font: 12px / 1.3 var(--font-sans);
+	color: var(--subtle);
+}
+.fg-j .katex {
+	font-size: 1.05em;
+}
+
+/* ---- plot ---- */
+.pl-view {
+	position: relative;
+	font: 11.5px var(--font-sans);
+}
+/* A label written into the plot, pointing down at what it names. */
+.pl-callout {
+	position: absolute;
+	z-index: 1;
+	transform: translate(-12px, -100%);
+	padding: 2px 8px;
+	border-radius: 6px;
+	background: var(--highlight);
+	color: var(--highlight-foreground);
+	font-size: 14px;
+	white-space: nowrap;
+	pointer-events: none;
+}
+.pl-callout[data-right] {
+	transform: translate(calc(-100% + 12px), -100%);
+}
+.pl-view .MafsView {
+	--mafs-bg: transparent;
+	--mafs-fg: var(--foreground);
+	--mafs-origin-color: var(--input);
+	--mafs-line-color: color-mix(in oklab, var(--border) 70%, transparent);
+	--grid-line-subdivision-color: var(--border);
+	/* Mafs blocks touch scrolling; pan and zoom are off, so give it back. */
+	touch-action: pan-y pinch-zoom;
+}
+.pl-view:not([data-grid]) .MafsView {
+	--mafs-line-color: transparent;
+}
+.pl-view .MafsView text {
+	fill: var(--muted-foreground);
+	font-size: 12px;
+}
+.pl-view .MafsView .mafs-shadow {
+	stroke: var(--paper);
+}
+.pl-classic,
+.pl-annotated {
+	margin: 0.4em 0 0.8em;
+}
+.pl-caption {
+	margin-top: 6px;
+	text-align: center;
+	font-size: 14px;
+	color: var(--muted-foreground);
+}
+.pl-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 16px;
+	padding: 8px 12px 10px;
+	font-size: 14px;
+	color: var(--muted-foreground);
+}
+.pl-annotated .pl-legend {
+	padding: 4px 0 0;
+}
+.pl-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.pl-swatch {
+	width: 14px;
+	height: 3px;
+	border-radius: 2px;
+}
+.pl-swatch[data-kind="region"] {
+	height: 10px;
+	opacity: 0.4;
+}
+.pl-swatch[data-kind="stem"] {
+	width: 3px;
+	height: 12px;
+}
+
+/* ---- the picker, verbatim from PICKER.md ---- */
+.proto-picker {
+	position: fixed;
+	bottom: 24px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 2147483647;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 4px;
+	border-radius: 999px;
+	background: rgba(10, 10, 10, 0.82);
+	-webkit-backdrop-filter: blur(12px) saturate(1.4);
+	backdrop-filter: blur(12px) saturate(1.4);
+	box-shadow:
+		0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+		0 8px 24px rgba(0, 0, 0, 0.24),
+		0 2px 6px rgba(0, 0, 0, 0.12);
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-size: 13px;
+	line-height: 1;
+	-webkit-font-smoothing: antialiased;
+	user-select: none;
+	-webkit-user-select: none;
+}
+.proto-picker-highlight {
+	position: absolute;
+	top: 4px;
+	left: 0;
+	height: 28px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.12);
+}
+.proto-picker[data-ready] .proto-picker-highlight {
+	transition:
+		transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+		width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+	.proto-picker[data-ready] .proto-picker-highlight {
+		transition: none;
+	}
+}
+.proto-picker-item {
+	position: relative;
+	display: flex;
+	align-items: center;
+	height: 28px;
+	padding: 0 12px;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.55);
+	font: inherit;
+	cursor: pointer;
+	transition:
+		color 150ms ease-out,
+		transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+	.proto-picker-item:hover {
+		color: rgba(255, 255, 255, 0.85);
+	}
+}
+.proto-picker-item:active {
+	transform: scale(0.97);
+}
+.proto-picker-item:focus-visible {
+	outline: 2px solid rgba(255, 255, 255, 0.4);
+	outline-offset: 2px;
+}
+.proto-picker-item[data-active] {
+	color: #fff;
+}
+.proto-picker-divider {
+	width: 1px;
+	height: 16px;
+	margin: 0 4px;
+	background: rgba(255, 255, 255, 0.12);
+}
+.proto-picker-replay {
+	padding: 0 10px;
+	font-size: 14px;
+}

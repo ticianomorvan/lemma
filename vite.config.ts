@@ -9,7 +9,16 @@ const api = `http://127.0.0.1:${apiPort}`;
 export default defineConfig({
 	root: "src/client",
 	plugins: [react(), tailwindcss()],
-	build: { outDir: "../../dist", emptyOutDir: true },
+	build: {
+		outDir: "../../dist",
+		emptyOutDir: true,
+		rolldownOptions: {
+			input: {
+				main: "src/client/index.html",
+				blocks: "src/client/prototypes/blocks.html",
+			},
+		},
+	},
 	server: {
 		host: "127.0.0.1",
 		port: 5173,
