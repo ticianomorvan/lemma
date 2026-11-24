@@ -110,6 +110,9 @@ export function parseBlock<T>(schema: z.ZodType<T>, source: string): T {
 	} catch (e) {
 		throw new Error(`JSON inválido: ${(e as Error).message}`);
 	}
+	if (depth(json) > MAX_DEPTH) {
+		throw new Error(`el bloque está demasiado anidado (máx. ${MAX_DEPTH})`);
+	}
 	const result = schema.safeParse(json);
 	if (!result.success) {
 		const issue = closest(result.error.issues[0]);
@@ -117,6 +120,19 @@ export function parseBlock<T>(schema: z.ZodType<T>, source: string): T {
 		throw new Error(`${issue?.message ?? "bloque inválido"}${at}`);
 	}
 	return result.data;
+}
+
+const MAX_DEPTH = 64;
+
+/** How deeply `value` nests, counted before zod's recursive schemas see it. */
+function depth(value: unknown, level = 0): number {
+	if (level > MAX_DEPTH || !value || typeof value !== "object") return level;
+	let max = level;
+	for (const v of Object.values(value)) {
+		max = Math.max(max, depth(v, level + 1));
+		if (max > MAX_DEPTH) break;
+	}
+	return max;
 }
 
 type Issue = z.core.$ZodIssue;

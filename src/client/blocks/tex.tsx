@@ -17,6 +17,9 @@ export const Tex = memo(function Tex({
 	const html = katex.renderToString(tex, {
 		throwOnError: false,
 		strict: "ignore",
+		// A formula can't blow up the page: no huge sizes, no macro bombs.
+		maxSize: 10,
+		maxExpand: 100,
 		displayMode: display,
 		output: "htmlAndMathml",
 	});

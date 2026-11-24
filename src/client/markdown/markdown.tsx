@@ -22,7 +22,10 @@ const remarkPluginsWithBreaks: Options["remarkPlugins"] = [
 const rehypePlugins: Options["rehypePlugins"] = [
 	rehypeMathGlue,
 	// Errors render inline (`.katex-error`) instead of throwing.
-	[rehypeKatex, { throwOnError: false, strict: "ignore" }],
+	[
+		rehypeKatex,
+		{ throwOnError: false, strict: "ignore", maxSize: 10, maxExpand: 100 },
+	],
 ];
 
 const components: Components = {

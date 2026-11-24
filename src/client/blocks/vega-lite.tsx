@@ -76,6 +76,41 @@ function config(): Config {
 	};
 }
 
+/**
+ * Vega runs on the main thread, so a spec that asks for millions of rows or
+ * pixels would freeze the page. Data comes as `values` (capped by the block's
+ * length); these keys generate rows of their own, so they're capped or refused.
+ */
+const REFUSED = new Set(["sequence", "keyvals"]);
+const CAPS: Record<string, number> = {
+	maxbins: 500,
+	steps: 1000,
+	step: 4000,
+	width: 4000,
+	height: 4000,
+};
+
+export function checkSpec(node: unknown, depth = 0, key = ""): void {
+	if (depth > 64) throw new Error("la especificación está demasiado anidada");
+	if (Array.isArray(node)) {
+		for (const v of node) checkSpec(v, depth + 1, key);
+		return;
+	}
+	if (!node || typeof node !== "object") return;
+	for (const [k, v] of Object.entries(node)) {
+		if (REFUSED.has(k)) throw new Error(`no se acepta \`${k}\``);
+		const cap = Object.hasOwn(CAPS, k) ? CAPS[k] : undefined;
+		if (cap !== undefined && typeof v === "number" && v > cap) {
+			throw new Error(`\`${k}\` es demasiado grande (máx. ${cap})`);
+		}
+		// A bin's `step` is a width in data units: a tiny one makes millions of bins.
+		if (key === "bin" && (k === "step" || k === "steps")) {
+			throw new Error("usá `maxbins` en lugar de `step` en `bin`");
+		}
+		checkSpec(v, depth + 1, k);
+	}
+}
+
 async function render(source: string, width: number): Promise<SVGSVGElement> {
 	let spec: TopLevelSpec;
 	try {
@@ -86,6 +121,7 @@ async function render(source: string, width: number): Promise<SVGSVGElement> {
 	if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
 		throw new Error("la especificación debe ser un objeto JSON");
 	}
+	checkSpec(spec);
 	const composed = ["facet", "repeat", "concat", "hconcat", "vconcat"].some(
 		(k) => k in spec,
 	);

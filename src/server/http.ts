@@ -144,7 +144,10 @@ export async function startServer({
 						return client
 							? new Response(client.index, {
 									status: 403,
-									headers: { "cache-control": "no-store" },
+									headers: {
+										"cache-control": "no-store",
+										"content-security-policy": CSP,
+									},
 								})
 							: error(403, "bad_code", "this pairing link was used or expired");
 					}
@@ -390,6 +393,26 @@ function parseJson(text: string): unknown {
 type Route = (req: Request) => Response | Promise<Response>;
 
 /**
+ * The client's Content-Security-Policy. Diagram blocks are sanitized before
+ * they reach the page; this is the second line: no script but our bundle (and
+ * the Graphviz WebAssembly), no fetch but our own API, no frames, no plugins.
+ */
+export const CSP = [
+	"default-src 'self'",
+	"script-src 'self' 'wasm-unsafe-eval'",
+	"style-src 'self' 'unsafe-inline'",
+	"img-src 'self' data: blob:",
+	"font-src 'self' data:",
+	"connect-src 'self'",
+	"object-src 'none'",
+	"base-uri 'none'",
+	"frame-src 'none'",
+	"frame-ancestors 'none'",
+	"form-action 'self'",
+	"worker-src 'self' blob:",
+].join("; ");
+
+/**
  * One route per file in the build output. Other paths without an extension get
  * the SPA shell; a missing asset (say, a stale hashed bundle) gets a 404, not HTML.
  */
@@ -410,13 +433,13 @@ async function clientRoutes(
 		// Vite puts content hashes in every name under assets/.
 		const headers: HeadersInit = path.startsWith("assets/")
 			? { "cache-control": "public, max-age=31536000, immutable" }
-			: {};
+			: { "content-security-policy": CSP };
 		routes[`/${path}`] = wrap(() => new Response(file, { headers }));
 	}
 	routes["/*"] = wrap((req) =>
 		extname(new URL(req.url).pathname)
 			? new Response("Not found", { status: 404 })
-			: new Response(index),
+			: new Response(index, { headers: { "content-security-policy": CSP } }),
 	);
 	return { routes, index };
 }

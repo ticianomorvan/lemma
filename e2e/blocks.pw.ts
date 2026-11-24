@@ -23,11 +23,15 @@ const BODY: Record<(typeof KINDS)[number], string> = {
 const block = (page: Page, id: string) =>
 	page.locator(`[data-case="${id}"] .block`);
 
+/** Opens the fixture page; the list collects any dialog or CSP violation. */
 async function openFixtures(page: Page, query = "") {
 	const dialogs: string[] = [];
 	page.on("dialog", (d) => {
 		dialogs.push(d.message());
 		void d.dismiss();
+	});
+	page.on("console", (m) => {
+		if (/content security policy/i.test(m.text())) dialogs.push(m.text());
 	});
 	await page.goto(`/fixtures/blocks.html${query}`);
 	return dialogs;
@@ -114,6 +118,80 @@ test("links and handlers in model-written diagrams are stripped", async ({
 	expect(unsafe).toEqual([]);
 	await block(page, "mermaid-click").getByText("Inicio").click();
 	expect(dialogs).toEqual([]);
+});
+
+test("blocks that bring their own config or generate data are refused", async ({
+	page,
+}) => {
+	await openFixtures(page);
+	for (const [id, message] of [
+		["mermaid-init", "directivas"],
+		["vega-sequence", "sequence"],
+	] as const) {
+		await expect(block(page, id)).toHaveAttribute("data-state", "error", {
+			timeout: 15_000,
+		});
+		await expect(block(page, id).locator(".block-error")).toContainText(
+			message,
+		);
+	}
+});
+
+test("the sanitizer keeps drawing and drops anything that could fetch or run", async ({
+	page,
+}) => {
+	await openFixtures(page);
+	const svg = (body: string) =>
+		`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:h="http://www.w3.org/1999/xhtml">${body}</svg>`;
+	const probe = (body: string) =>
+		page.evaluate(
+			(m) =>
+				(
+					window as unknown as { sanitizeProbe: (m: string) => string }
+				).sanitizeProbe(m),
+			svg(body),
+		);
+	const out = await probe(
+		[
+			'<rect width="10" height="10" fill="url(#g)" clip-path="url(#c)"/>',
+			"<rect style=\"fill: image-set('https://example.com/a.png' 1x)\"/>",
+			'<rect style="fill: u\\72l(https://example.com/b)"/>',
+			'<rect fill="url(https://example.com/c)"/>',
+			"<style>@import 'https://example.com/d.css'; rect { fill: red }</style>",
+			"<style>@keyframes spin { to { opacity: 1 } }</style>",
+			'<h:img src="https://example.com/e.png"/>',
+			'<h:meta http-equiv="refresh" content="0;url=https://example.com/f"/>',
+			'<image href="https://example.com/g.png"/>',
+			'<use xlink:href="https://example.com/h.svg#x"/>',
+			"<foreignObject><h:div>x</h:div></foreignObject>",
+			"<script>alert(1)</script>",
+			'<a href="javascript:alert(1)" transform="translate(5,5)"><text>t</text></a>',
+			'<animate attributeName="href" to="javascript:alert(1)"/>',
+			'<g onclick="alert(1)"><circle r="1"/></g>',
+		].join(""),
+	);
+	expect(out).toContain('fill="url(#g)"');
+	expect(out).toContain('clip-path="url(#c)"');
+	expect(out).toContain("@keyframes");
+	expect(out).toContain('<g transform="translate(5,5)"><text>t</text></g>');
+	expect(out).toContain('<circle r="1"');
+	for (const bad of [
+		"example.com",
+		"image-set",
+		"\\",
+		"<img",
+		"<meta",
+		"<image",
+		"<use",
+		"<foreignObject",
+		"<script",
+		"<a ",
+		"<animate",
+		"onclick",
+		"javascript:",
+	]) {
+		expect(out).not.toContain(bad);
+	}
 });
 
 test("blocks fit a phone and follow dark mode", async ({ page }) => {

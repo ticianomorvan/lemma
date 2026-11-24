@@ -12,9 +12,45 @@ import { type Scheme, token, useScheme } from "./theme.ts";
 let queue: Promise<unknown> = Promise.resolve();
 let seq = 0;
 
+/** Keys a diagram can't override, even through a directive we missed. */
+const SECURE = [
+	"secure",
+	"securityLevel",
+	"startOnLoad",
+	"maxTextSize",
+	"maxEdges",
+	"htmlLabels",
+	"themeCSS",
+	"themeVariables",
+	"theme",
+	"darkMode",
+	"fontFamily",
+	"flowchart",
+];
+
+/**
+ * A diagram brings no config of its own: `%%{init}` directives and front
+ * matter can change the theme CSS, and `@{…}` shapes can name images.
+ */
+export function checkMermaid(source: string) {
+	if (source.includes("%%{")) {
+		throw new Error("no se aceptan directivas `%%{…}%%`");
+	}
+	if (/^\s*---/.test(source)) {
+		throw new Error("no se acepta configuración al inicio (`---`)");
+	}
+	if (source.includes("@{")) {
+		throw new Error("no se aceptan formas `@{…}`");
+	}
+}
+
 function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
 	const run = queue.then(async () => {
+		checkMermaid(source);
 		mermaid.initialize({
+			secure: SECURE,
+			maxTextSize: 20_000,
+			maxEdges: 500,
 			startOnLoad: false,
 			securityLevel: "strict",
 			htmlLabels: false,

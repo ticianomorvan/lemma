@@ -172,9 +172,12 @@ study/
   - The Worker has Bun's full APIs and no OS sandbox, so the mathjs lockdown is the boundary: a future mathjs escape would reach the machine. Keep mathjs pinned and re-run the escape checks when it is bumped.
 - **Diagram blocks** render model-written source, so none of it runs as code.
   - `proof`, `fitch` and `plot` are JSON checked by zod schemas; `plot` expressions use our own parser (no `eval`); formulas go to KaTeX with `trust` off.
-  - Graphviz, Mermaid and Vega output is parsed as SVG and sanitized (`client/blocks/sanitize-svg.ts`): scripts, `foreignObject`, `image`, `use`, animation elements, event handlers, links and any `url(...)` that leaves the document are removed. The element is then inserted as a node, never re-serialized.
-  - Mermaid runs with `securityLevel: 'strict'` and SVG labels. Vega parses expressions to an AST run by `vega-interpreter` instead of `new Function`, and its loader refuses every URL, so a spec can't fetch or reach the network.
-  - Each source is size-capped. Graphviz still runs on the main thread, so a hostile graph under the cap can stall the tab; accepted for a single-user local app.
+  - `proof`, `fitch` and `plot` JSON is refused past 64 levels of nesting before zod sees it. KaTeX runs with `maxSize: 10` and `maxExpand: 100`, so a formula can't draw a page-sized box or expand a macro bomb.
+  - Graphviz, Mermaid and Vega output is parsed as SVG and sanitized (`client/blocks/sanitize-svg.ts`) against an allow-list: only drawing elements in the SVG namespace survive (no `script`, `foreignObject`, `image`, `use`, animation, or an XHTML `<img>`/`<meta>`). Links become plain groups. Event handlers, `href`/`src` attributes, and CSS that could fetch (escapes, `@import`, `image-set()`, a `url(...)` outside the document) are removed, in attributes and in `<style>`. The element is then inserted as a node, never re-serialized.
+  - Mermaid runs with `securityLevel: 'strict'` and SVG labels. A diagram that brings its own config (`%%{init}%%`, front matter, `@{…}` shapes) is refused, and `secure` locks our keys against any directive missed.
+  - Vega parses expressions to an AST run by `vega-interpreter` instead of `new Function`, and its loader refuses every URL, so a spec can't fetch or reach the network. Vega runs on the main thread, so keys that generate data are refused (`sequence`, `keyvals`, a bin `step`) and sizes are capped (`maxbins` 500, density `steps` 1000, `width`/`height`/`step` 4000).
+  - The production server sends a Content-Security-Policy with every page (`CSP` in `server/http.ts`): scripts only from our bundle (plus `'wasm-unsafe-eval'` for Graphviz), `connect-src 'self'`, no objects, frames or `<base>`. It backs up the sanitizer; e2e/blocks.pw.ts fails on any violation.
+  - Each source is size-capped. Graphviz and Vega still run on the main thread, so a hostile block under the caps can stall the tab; accepted for a single-user local app.
 - **Accepted risk.** On the LAN, a cookie sent over plain HTTP can be sniffed. This is documented, and Tailscale Serve is the hardened option.
 
 ## Stack

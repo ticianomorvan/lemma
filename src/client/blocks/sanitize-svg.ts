@@ -1,63 +1,100 @@
 /**
  * Strips an SVG produced from model-written source (Graphviz, Mermaid, Vega)
- * down to drawing: no scripts, no event handlers, no links, no embedded HTML,
- * no external references. The renderers already escape labels; this is the
- * boundary that holds if one of them doesn't.
+ * down to drawing. Only SVG elements on an allow-list survive, in the SVG
+ * namespace (no `<img>`, `<link>`, `<meta>` from another namespace); links
+ * become plain groups; event handlers and anything that names a URL go; CSS
+ * that could fetch (escapes, `@import`, `image-set()`, a `url()` outside the
+ * document) is dropped. The server's Content-Security-Policy backs this up.
  */
 
-/** Elements dropped with their content. */
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-const DROP = new Set([
-	"script",
-	"foreignobject",
-	"iframe",
-	"object",
-	"embed",
-	"audio",
-	"video",
-	"image",
-	"use",
-	"animate",
-	"animatemotion",
-	"animatetransform",
-	"set",
-	"handler",
-	"listener",
+/** SVG elements that only draw (lowercase). Everything else is dropped. */
+const ALLOWED = new Set([
+	"svg",
+	"g",
+	"path",
+	"rect",
+	"circle",
+	"ellipse",
+	"line",
+	"polyline",
+	"polygon",
+	"text",
+	"tspan",
+	"title",
+	"desc",
+	"defs",
+	"marker",
+	"clippath",
+	"mask",
+	"pattern",
+	"lineargradient",
+	"radialgradient",
+	"stop",
+	"symbol",
+	"style",
+	"filter",
+	"fedropshadow",
+	"fegaussianblur",
+	"feoffset",
+	"feflood",
+	"fecomposite",
+	"feblend",
+	"fecolormatrix",
+	"femerge",
+	"femergenode",
+	"femorphology",
 ]);
 
 /** Parses `markup` as SVG and returns the sanitized root element. */
 export function parseSvg(markup: string): SVGSVGElement {
 	const doc = new DOMParser().parseFromString(markup, "image/svg+xml");
 	const root = doc.documentElement;
-	if (root.nodeName !== "svg" || doc.querySelector("parsererror")) {
+	if (
+		root.localName !== "svg" ||
+		root.namespaceURI !== SVG_NS ||
+		doc.querySelector("parsererror")
+	) {
 		throw new Error("el renderizador no devolvió un SVG válido");
 	}
 	return sanitizeSvg(root as unknown as SVGSVGElement);
 }
 
-/** True unless a `url(...)` in the value points outside the document. */
-function localUrls(value: string): boolean {
-	if (!value.includes("url(")) return true;
-	return [...value.matchAll(/url\(([^)]*)\)?/g)].every((m) =>
-		(m[1] ?? "").replace(/['"]/g, "").startsWith("#"),
-	);
+/**
+ * True if a piece of CSS (a `style` attribute, a `<style>` sheet, or any
+ * attribute value, since presentation attributes are CSS) can't fetch.
+ */
+export function safeCss(css: string): boolean {
+	const v = css.replace(/[\s\p{Cc}]/gu, "").toLowerCase();
+	if (
+		/\\|@import|@font-face|@namespace|image-set\(|image\(|cross-fade\(|element\(|src\(|expression\(|javascript:|<|paint\(/.test(
+			v,
+		)
+	) {
+		return false;
+	}
+	// `url(...)` may only point inside the document (`url(#clip)`).
+	for (const m of v.matchAll(/url\(([^)]*)\)?/g)) {
+		if (!(m[1] ?? "").replace(/['"]/g, "").startsWith("#")) return false;
+	}
+	return true;
 }
 
 export function sanitizeSvg<T extends Element>(root: T): T {
 	const walk = (el: Element) => {
 		for (const child of [...el.children]) {
 			const name = child.localName.toLowerCase();
-			if (DROP.has(name)) {
+			if (child.namespaceURI !== SVG_NS) {
 				child.remove();
 				continue;
 			}
 			if (name === "a") {
 				// Keep what a link wraps (and its position), drop the link: a <g>
-				// takes its place, and its attributes go through the check below.
+				// takes its place, and its attributes go through `clean`.
 				const g = el.ownerDocument.createElementNS(SVG_NS, "g");
 				for (const attr of [...child.attributes]) {
-					g.setAttribute(attr.name, attr.value);
+					if (!attr.name.includes(":")) g.setAttribute(attr.name, attr.value);
 				}
 				g.append(...child.childNodes);
 				child.replaceWith(g);
@@ -65,42 +102,35 @@ export function sanitizeSvg<T extends Element>(root: T): T {
 				clean(g);
 				continue;
 			}
+			if (!ALLOWED.has(name)) {
+				child.remove();
+				continue;
+			}
+			if (name === "style") {
+				if (!safeCss(child.textContent ?? "")) child.remove();
+				continue;
+			}
 			walk(child);
+			clean(child);
 		}
-		clean(el);
 	};
 	const clean = (el: Element) => {
 		for (const attr of [...el.attributes]) {
 			const name = attr.name.toLowerCase();
-			const value = attr.value.replace(/[\s\p{Cc}]/gu, "").toLowerCase();
 			if (
 				name.startsWith("on") ||
 				name === "href" ||
 				name.endsWith(":href") ||
 				name === "src" ||
-				name === "action" ||
-				name === "formaction" ||
+				name === "srcset" ||
 				name === "target" ||
-				// `url(...)` may only point inside the document (`url(#clip)`).
-				!localUrls(value) ||
-				value.includes("javascript:") ||
-				// CSS escapes (`u\72l(`) would hide a URL from the check above.
-				(name === "style" && value.includes("\\"))
+				!safeCss(attr.value)
 			) {
 				el.removeAttribute(attr.name);
 			}
 		}
-		if (el.localName === "style") {
-			// Inline <style> may import or fetch; keep only self-contained rules.
-			const css = el.textContent ?? "";
-			if (
-				/@import|expression\(|javascript:|\\/i.test(css) ||
-				!localUrls(css.replace(/\s/g, "").toLowerCase())
-			) {
-				el.remove();
-			}
-		}
 	};
 	walk(root);
+	clean(root);
 	return root;
 }

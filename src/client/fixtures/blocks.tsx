@@ -9,6 +9,7 @@
 import "../globals.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { parseSvg } from "../blocks/sanitize-svg.ts";
 import { Markdown } from "../markdown/markdown.tsx";
 
 const fence = (lang: string, body: string, close = true) =>
@@ -240,7 +241,32 @@ const CASES: { id: string; title: string; md: string }[] = [
 			'flowchart LR\n  A[Inicio] --> B[Fin]\n  click A "javascript:alert(1)"',
 		),
 	},
+	{
+		id: "mermaid-init",
+		title: "mermaid con directiva init",
+		md: fence(
+			"mermaid",
+			'%%{init: {"themeCSS": "* { background: url(https://example.com/x) }"}}%%\nflowchart LR\n  A --> B',
+		),
+	},
+	{
+		id: "vega-sequence",
+		title: "vega-lite con sequence",
+		md: fence(
+			"vega-lite",
+			json({
+				data: { sequence: { start: 0, stop: 10_000_000 } },
+				mark: "point",
+				encoding: { x: { field: "data", type: "quantitative" } },
+			}),
+		),
+	},
 ];
+
+// For e2e/blocks.pw.ts: markup no renderer emits, straight through the sanitizer.
+Object.assign(window, {
+	sanitizeProbe: (markup: string) => parseSvg(markup).outerHTML,
+});
 
 function Page() {
 	return (

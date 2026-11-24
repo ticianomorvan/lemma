@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseBlock, plotSchema } from "./schema.ts";
+import { parseBlock, plotSchema, proofSchema } from "./schema.ts";
 
 test("a bad plot item names its own problem, not the union's", () => {
 	const source = JSON.stringify({
@@ -13,4 +13,10 @@ test("a bad plot item names its own problem, not the union's", () => {
 
 test("broken JSON says so", () => {
 	expect(() => parseBlock(plotSchema, "{")).toThrow(/^JSON inválido/);
+});
+
+test("a block nested past the cap is refused before zod", () => {
+	let node = '{"conclusion":"p"}';
+	for (let i = 0; i < 80; i++) node = `{"conclusion":"p","premises":[${node}]}`;
+	expect(() => parseBlock(proofSchema, node)).toThrow("demasiado anidado");
 });
