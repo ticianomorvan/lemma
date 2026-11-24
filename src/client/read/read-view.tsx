@@ -151,6 +151,8 @@ function Read({
 	);
 
 	const openTurn = useCallback((turnId: string) => {
+		// The card or pin that was hovered goes away; so does its emphasis.
+		setActive(undefined);
 		setChat(true);
 		setTarget((t) => ({ turnId, n: (t?.n ?? 0) + 1 }));
 	}, []);
@@ -162,7 +164,11 @@ function Read({
 		setTarget(undefined);
 	}, []);
 	const toggleChat = useCallback(
-		(open: boolean) => (open ? setChat(true) : closeChat()),
+		(open: boolean) => {
+			setActive(undefined);
+			if (open) setChat(true);
+			else closeChat();
+		},
 		[closeChat],
 	);
 
@@ -344,7 +350,7 @@ function Read({
 			{!chat && (
 				<ChatButton
 					open={chat}
-					onClick={() => setChat(true)}
+					onClick={() => toggleChat(true)}
 					count={turnCount}
 					className="absolute top-3 right-4 z-10 shadow-sm"
 				/>
