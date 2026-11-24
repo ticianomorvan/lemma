@@ -14,12 +14,14 @@ test("the production build opens a session at its own URL", async ({
 test("the production build leaves out the design prototypes", async ({
 	request,
 }) => {
-	// Dev only (vite.config.ts): the build has no prototype page and no bundle of it.
+	// Dev only (vite.prototype.config.ts): the build has no prototype page and no bundle of it.
 	const page = await request.get("/prototypes/read.html");
 	expect(page.status()).toBe(404);
 	const shell = await (await request.get("/prototypes/read")).text();
 	expect(shell).not.toContain("prototipo");
-	expect(existsSync("dist/prototypes")).toBe(false);
+	expect(existsSync(new URL("../dist/prototypes", import.meta.url))).toBe(
+		false,
+	);
 });
 
 test("the session menu lists the folder's sessions by course and reopens one", async ({

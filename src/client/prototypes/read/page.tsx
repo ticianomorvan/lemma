@@ -4,12 +4,7 @@
  * highlighted, and a selection anywhere on a page offers Ask and Note.
  */
 import { MessageSquarePlus, StickyNote } from "lucide-react";
-import {
-	Fragment,
-	type RefObject,
-	useEffect,
-	useState,
-} from "react";
+import { Fragment, type RefObject, useEffect, useState } from "react";
 import { cn } from "#lib/utils.ts";
 import type { Anchor } from "../../../shared/protocol.ts";
 import { Tex } from "../../blocks/tex.tsx";
@@ -174,8 +169,13 @@ function RunView({
 }
 
 /** The page most of the reading surface shows, for the header's "p. 12" and the phone strip. */
-export function useVisiblePage(scroller: RefObject<HTMLElement | null>) {
+export function useVisiblePage(
+	scroller: RefObject<HTMLElement | null>,
+	/** Changes when the layout swaps the scroller element. */
+	layout: unknown,
+) {
 	const [page, setPage] = useState(PAGES[0]?.n ?? 1);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `layout` re-observes
 	useEffect(() => {
 		const el = scroller.current;
 		if (!el) return;
@@ -202,7 +202,7 @@ export function useVisiblePage(scroller: RefObject<HTMLElement | null>) {
 		);
 		for (const p of el.querySelectorAll("[data-page]")) observer.observe(p);
 		return () => observer.disconnect();
-	}, [scroller]);
+	}, [scroller, layout]);
 	return page;
 }
 

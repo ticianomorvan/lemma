@@ -338,19 +338,33 @@ function Read({ session, size }: { session: FakeSession; size: Size }) {
 	const [active, setActive] = useState<string>();
 	const [pending, setPending] = useState<Anchor>();
 	const [draft, setDraft] = useState<Draft>();
-	const page = useVisiblePage(scroller);
+	const phone = size === "phone";
+	// The phone and wide layouts each have their own scroller.
+	const page = useVisiblePage(scroller, phone);
 
-	const items = marginItems(session.state, session.notes);
+	const items = useMemo(
+		() => marginItems(session.state, session.notes),
+		[session.state, session.notes],
+	);
 	const groups = useMemo(() => groupsOf(items), [items]);
 	const openTurn = useCallback((turnId: string) => {
 		setChat(true);
 		setTarget((t) => ({ turnId, n: (t?.n ?? 0) + 1 }));
 	}, []);
 	const clearPending = useCallback(() => setPending(undefined), []);
+	// A closed chat forgets which turn it was sent to, so reopening it
+	// doesn't jump back there.
+	const closeChat = useCallback(() => {
+		setChat(false);
+		setTarget(undefined);
+	}, []);
+	const toggleChat = useCallback(
+		(open: boolean) => (open ? setChat(true) : closeChat()),
+		[closeChat],
+	);
 
 	const marks = useMarks(groups, active);
 
-	const phone = size === "phone";
 	const onAsk = (anchor: Anchor, range: Range) => {
 		if (chat || phone) {
 			keepRange(anchor, range);
@@ -395,7 +409,7 @@ function Read({ session, size }: { session: FakeSession; size: Size }) {
 			pending={pending}
 			onPendingClear={clearPending}
 			target={target}
-			onClose={() => setChat(false)}
+			onClose={closeChat}
 			closeIcon={closeIcon}
 		/>
 	);
@@ -417,7 +431,7 @@ function Read({ session, size }: { session: FakeSession; size: Size }) {
 				page={page}
 				groups={groups}
 				chat={chat}
-				setChat={setChat}
+				setChat={toggleChat}
 				panel={panel}
 				turnCount={turnCount}
 				openTurn={openTurn}

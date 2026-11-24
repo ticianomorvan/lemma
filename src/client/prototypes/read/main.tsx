@@ -3,7 +3,7 @@
  * fixture page and session, in the design chosen for step 8 (docs/architecture.md
  * → Views). Dev only: `bun run dev:client`, then /prototypes/read.html;
  * `bun run preview:prototype` serves a built copy. The production build leaves
- * it out (vite.config.ts, e2e/app.pw.ts). `?theme=light|dark` sets the theme.
+ * it out (vite.prototype.config.ts, e2e/app.pw.ts). `?theme=light|dark` sets the theme.
  */
 import "../../globals.css";
 import "./read.css";

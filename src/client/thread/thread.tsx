@@ -14,6 +14,7 @@ import { Markdown } from "../markdown/lazy.tsx";
 import type { SessionState } from "../store.ts";
 import { useComposer, useStickToBottom, useStopOnEscape } from "./hooks.ts";
 import {
+	basename,
 	cellId,
 	isRunning,
 	itemKey,
@@ -339,7 +340,7 @@ export function Citation({
 			<span className="flex items-center gap-1.5 text-[12px] text-primary">
 				<FileText aria-hidden className="size-3.5 shrink-0" />
 				<span className="truncate">
-					{anchor.path.split("/").pop()} · p. {anchor.page}
+					{basename(anchor.path)} · p. {anchor.page}
 				</span>
 			</span>
 			<span className="mt-0.5 line-clamp-2 border-l-2 border-highlight pl-2 font-heading text-[14px] text-muted-foreground italic">
@@ -351,7 +352,7 @@ export function Citation({
 		<button
 			type="button"
 			onClick={() => onCite(anchor)}
-			aria-label={`Abrir ${anchor.path.split("/").pop()} en la página ${anchor.page}`}
+			aria-label={`Abrir ${basename(anchor.path)} en la página ${anchor.page}`}
 			className="-mx-1.5 mb-2 grid w-[calc(100%+0.75rem)] rounded-md px-1.5 py-1 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-secondary active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-ring"
 		>
 			{body}

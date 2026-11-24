@@ -115,6 +115,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 
 ### 8. Read view
 - **Start from** the step 7 route (`src/client/prototypes/read/`) and the design it settled (`architecture.md` → Views): move its views into the app, swap the fixture pages for react-pdf and the fake session for the store, then delete the route.
+- **Carry over:** keep the shadcn `sheet`, `tabs` and `tooltip` components the route added (Read and Practice use them). Take the 640 / 1024 px breakpoints from one shared `useLayout()` instead of separate media queries and `sm:`/`lg:` classes. Move the `[data-passage]` and `[data-page]` lookups in `items.ts` next to the page renderer, since react-pdf replaces it. Size the pin bars from the rects the margin layout already measures, and drop selection highlights whose turn or note is gone.
 - **What:** a PDF pane (`react-pdf`, with its text layer and `/files/*` Range support), and select → Ask or Note.
 - **Behavior:** `anchor` on messages and the `notes` route; margin cards for the visible page; the chat panel with pins.
 - **Proof:**

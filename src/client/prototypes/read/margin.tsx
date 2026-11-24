@@ -67,7 +67,9 @@ function useColumn(
 			floor = Math.max(floor, (top.get(w.key) ?? 0) + w.height);
 		}
 		setLayout((old) =>
-			same(old.top, top) && old.floor === floor ? old : { top, want, floor },
+			same(old.top, top) && same(old.want, want) && old.floor === floor
+				? old
+				: { top, want, floor },
 		);
 	}, [key, tick, gap]);
 
