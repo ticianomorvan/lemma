@@ -1,0 +1,369 @@
+/*
+ * Diagram blocks in an answer: the Tarjeta card (picked in step 6), and each
+ * kind's body. Colours are theme tokens only, so every block follows dark mode.
+ */
+
+.block {
+	margin: 0.4em 0 0.9em;
+	min-width: 0;
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+	font-family: var(--font-serif);
+}
+.block-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 38px;
+	padding: 6px 8px 6px 12px;
+	border-bottom: 1px solid var(--border);
+	font: 500 12px / 1 var(--font-sans);
+	color: var(--muted-foreground);
+}
+.block-chip {
+	display: inline-flex;
+	align-items: center;
+	height: 22px;
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--primary-soft);
+	color: var(--primary);
+	white-space: nowrap;
+}
+.block-chip.is-error {
+	background: color-mix(in oklab, var(--destructive) 14%, transparent);
+	color: var(--destructive);
+}
+.block-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 26px;
+	margin-left: auto;
+	padding: 0 8px;
+	border-radius: 6px;
+	color: var(--subtle);
+	transition:
+		color 150ms var(--ease-out),
+		background-color 150ms var(--ease-out),
+		transform 150ms var(--ease-out);
+}
+.block-toggle:active {
+	transform: scale(0.97);
+}
+.block-toggle[aria-pressed="true"] {
+	background: var(--secondary);
+	color: var(--foreground);
+}
+@media (hover: hover) and (pointer: fine) {
+	.block-toggle:hover {
+		color: var(--foreground);
+	}
+}
+.block-toggle:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 1px;
+}
+.block-body {
+	min-width: 0;
+}
+/* Wide diagrams scroll inside the card, like `.katex-display`. */
+.block-scroll {
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding: 16px 14px;
+}
+/* `.answer` beats the answer's own `pre` style. */
+.answer .block-source {
+	margin: 0;
+	padding: 10px 12px;
+	border: 0;
+	border-top: 1px solid var(--border);
+	border-radius: 0;
+	background: var(--paper);
+	font:
+		12.5px / 1.55 ui-monospace,
+		"SF Mono",
+		Menlo,
+		monospace;
+	color: var(--muted-foreground);
+	white-space: pre;
+	overflow-x: auto;
+	max-height: 24em;
+}
+.block-body > .block-source:first-child {
+	border-top: 0;
+}
+.block[data-state="pending"] .block-source {
+	border-style: dashed;
+}
+.block-error {
+	margin: 0;
+	padding: 10px 12px;
+	font: 13.5px / 1.45 var(--font-sans);
+	color: var(--destructive);
+	overflow-wrap: anywhere;
+}
+.block-loading {
+	height: 120px;
+	margin: 16px 14px;
+	border-radius: 6px;
+	background:
+		linear-gradient(
+			90deg,
+			var(--secondary) 0%,
+			var(--paper) 50%,
+			var(--secondary) 100%
+		)
+		0 0 / 200% 100%;
+	animation: shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.block-loading {
+		animation: none;
+	}
+}
+
+/* ---- proof ---- */
+.pt {
+	display: flex;
+	justify-content: center;
+	width: max-content;
+	min-width: 100%;
+	font-size: 16px;
+	padding: 2px 0;
+}
+.pt-node {
+	display: inline-grid;
+	grid-template-columns: auto auto;
+	grid-template-areas:
+		"premises ."
+		"line rule"
+		"conc .";
+	align-self: flex-end;
+}
+.pt-premises {
+	grid-area: premises;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	gap: 0 1.6em;
+	padding: 0 0.3em;
+}
+.pt-line {
+	grid-area: line;
+	height: 0;
+	border-top: 1.5px solid var(--primary);
+	align-self: center;
+	margin: 3px 0;
+}
+.pt-rule {
+	grid-area: rule;
+	align-self: center;
+	margin-left: 0.25em;
+	padding: 2px 6px;
+	border-radius: 6px;
+	background: var(--secondary);
+	font-size: 0.8em;
+	white-space: nowrap;
+	line-height: 1.1;
+	transition:
+		background-color 150ms var(--ease-out),
+		color 150ms var(--ease-out);
+}
+.pt-conc {
+	grid-area: conc;
+	justify-self: center;
+	white-space: nowrap;
+	padding: 0 0.3em;
+	line-height: 1.5;
+}
+.pt-node > .pt-conc:only-child {
+	grid-row: 3;
+}
+.pt-leaf[data-discharged] {
+	color: var(--muted-foreground);
+	border-radius: 6px;
+	transition:
+		background-color 150ms var(--ease-out),
+		color 150ms var(--ease-out);
+}
+.pt-leaf[data-hot],
+.pt-rule[data-hot] {
+	background: var(--highlight);
+	color: var(--highlight-foreground);
+}
+
+/* ---- fitch ---- */
+.fk {
+	display: grid;
+	width: max-content;
+	min-width: 100%;
+	font-size: 16px;
+}
+.fk-row {
+	display: flex;
+	align-items: stretch;
+	min-height: 2.1em;
+}
+.fk-row + .fk-row {
+	border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+.fk-n {
+	width: 1.8em;
+	flex-shrink: 0;
+	align-self: center;
+	text-align: right;
+	padding-right: 0.7em;
+	font: 12.5px var(--font-sans);
+	font-variant-numeric: tabular-nums;
+	color: var(--subtle);
+}
+.fk-band {
+	width: 16px;
+	flex-shrink: 0;
+	border-left: 2px solid var(--primary);
+	background: color-mix(in oklab, var(--primary) 7%, transparent);
+}
+.fk-band[data-d="1"] {
+	border-left-color: color-mix(in oklab, var(--primary) 65%, var(--success));
+}
+.fk-band[data-d="2"] {
+	border-left-color: color-mix(in oklab, var(--primary) 35%, var(--success));
+}
+.fk-f {
+	display: flex;
+	align-items: center;
+	flex: 1;
+	padding: 0 1.5em 0 8px;
+	white-space: nowrap;
+}
+.fk-j {
+	display: flex;
+	align-items: center;
+	padding: 0 4px 0 10px;
+	font-size: 0.8em;
+	color: var(--muted-foreground);
+	white-space: nowrap;
+}
+.fk-row[data-opens] .fk-j > span {
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: var(--highlight);
+	color: var(--highlight-foreground);
+}
+
+/* ---- plot ---- */
+.plot-wrap {
+	padding: 10px 8px 0 0;
+}
+.plot-svg {
+	position: relative;
+	width: 100%;
+	min-height: 210px;
+}
+.plot-svg svg {
+	display: block;
+	overflow: visible;
+}
+.plot-grid line {
+	stroke: var(--border);
+	stroke-width: 1;
+}
+.plot-axis line {
+	stroke: var(--input);
+	stroke-width: 1.25;
+}
+.plot-ticks text {
+	fill: var(--muted-foreground);
+	font: 11.5px var(--font-sans);
+	font-variant-numeric: tabular-nums;
+}
+.plot-region {
+	fill-opacity: 0.22;
+}
+:root[data-theme="dark"] .plot-region {
+	fill-opacity: 0.34;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .plot-region {
+		fill-opacity: 0.34;
+	}
+}
+.plot-label,
+.plot-axis-label {
+	position: absolute;
+	font-size: 13.5px;
+	color: var(--muted-foreground);
+	white-space: nowrap;
+	pointer-events: none;
+	line-height: 1;
+}
+.plot-label {
+	padding: 1px 4px;
+	border-radius: 4px;
+	background: color-mix(in oklab, var(--card) 85%, transparent);
+}
+.plot-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 16px;
+	padding: 8px 12px 10px;
+	font-size: 14px;
+	color: var(--muted-foreground);
+}
+.plot-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.plot-swatch {
+	width: 14px;
+	height: 3px;
+	border-radius: 2px;
+}
+.plot-swatch[data-kind="region"] {
+	height: 10px;
+	opacity: 0.4;
+}
+.plot-swatch[data-kind="stem"] {
+	width: 3px;
+	height: 12px;
+}
+
+/* ---- dot, mermaid, vega-lite ---- */
+.dot,
+.mermaid,
+.vega {
+	display: flex;
+	justify-content: center;
+	width: max-content;
+	min-width: 100%;
+}
+.dot svg {
+	max-width: 100%;
+	height: auto;
+	color: var(--foreground);
+	font-family: var(--font-sans);
+}
+/* Graphviz's default black ink becomes the theme's. */
+.dot svg [stroke="black"],
+.dot svg [stroke="#000000"] {
+	stroke: currentColor;
+}
+.dot svg [fill="black"],
+.dot svg [fill="#000000"],
+.dot svg text:not([fill]) {
+	fill: currentColor;
+}
+.dot svg text {
+	font-family: var(--font-sans);
+}
+.mermaid svg,
+.vega svg {
+	max-width: 100%;
+	height: auto;
+}

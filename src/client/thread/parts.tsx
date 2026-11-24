@@ -7,7 +7,7 @@ import {
 } from "#components/ui/collapsible.tsx";
 import { cn } from "#lib/utils.ts";
 import { type Block, CALC_TOOL, type Turn } from "../../shared/protocol.ts";
-import { Markdown } from "../markdown/markdown.tsx";
+import { Markdown } from "../markdown/lazy.tsx";
 import { toolLabel, visibleBlocks } from "./model.ts";
 
 /** The blocks of one assistant turn: thinking, tools and answer text. */

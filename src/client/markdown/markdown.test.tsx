@@ -91,4 +91,24 @@ describe("Markdown", () => {
 		expect(out).not.toContain("katex");
 		expect(out).toContain("$30 y $40.");
 	});
+
+	test("a diagram block shows its source while its fence is open", () => {
+		const source = '{"xDomain": [0, 1], "items": [{"fn": "x^';
+		const open = html(`Mirá:\n\n\`\`\`plot\n${source}`);
+		expect(open).toContain('data-state="pending"');
+		expect(open).toContain("&quot;xDomain&quot;");
+		// Closed, it goes to its renderer (which loads lazily, so SSR shows the placeholder).
+		const closed = html(`Mirá:\n\n\`\`\`plot\n${source}2"}]}\n\`\`\`\n`);
+		expect(closed).toContain('data-state="loading"');
+		expect(closed).not.toContain('data-state="pending"');
+	});
+
+	test("an open fence counts only with a matching closing fence", () => {
+		const longer = html("````dot\ndigraph { a }\n```\n");
+		expect(longer).toContain('data-state="pending"');
+		const tilde = html("~~~dot\ndigraph { a }\n~~~\n");
+		expect(tilde).toContain('data-state="loading"');
+		// Ordinary code keeps rendering as code.
+		expect(html("```js\nlet a\n")).toContain("<pre><code");
+	});
 });
