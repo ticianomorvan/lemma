@@ -182,7 +182,7 @@ export function ChatApp() {
 							onUnpaired={unpair}
 							onMeta={setMeta}
 							view={view}
-							files={files ?? []}
+							files={files}
 							layout={layout}
 						/>
 					) : screen === "failed" ? (
@@ -209,7 +209,8 @@ type SessionProps = {
 	onMeta: (meta: SessionMeta) => void;
 	/** Undefined until the course's materials are known. */
 	view?: View;
-	files: Material[];
+	/** Undefined until the server lists them. */
+	files?: Material[];
 	layout: Layout;
 };
 
@@ -266,11 +267,11 @@ function Live({
 		},
 		[store.id],
 	);
-	const file = openFile(files, chosenFile, state.view);
+	const file = files && openFile(files, chosenFile, state.view);
 
 	return (
 		<div className="relative h-full">
-			{view === "read" ? (
+			{view === "read" && files ? (
 				<Suspense fallback={null}>
 					<ReadView
 						store={store}

@@ -20,6 +20,25 @@ const pageSelector = (page: number) => `${ROOT} [data-page="${page}"]`;
 /** Marks the element that scrolls the pages; `revealAnchor` scrolls it. */
 export const SCROLLER = { "data-pdf-scroller": "" } as const;
 
+/**
+ * The part of a selection on the page it starts on: a quote that runs onto
+ * the next page is cut at the end of the first, so it can be found there.
+ */
+export function clipToPage(range: Range): Range {
+	const start = range.startContainer;
+	const el = start instanceof Element ? start : start.parentElement;
+	const layer = el?.closest(`${ROOT} [data-page] .textLayer`);
+	if (!layer || layer.contains(range.endContainer)) return range;
+	// The last text on the page, not the layer's end marker below it.
+	const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+	let last: Text | null = null;
+	for (let n = walker.nextNode(); n; n = walker.nextNode()) last = n as Text;
+	if (!last) return range;
+	const clipped = range.cloneRange();
+	clipped.setEnd(last, last.data.length);
+	return clipped;
+}
+
 /** The page a DOM node sits on, if it is on the open PDF inside `root`. */
 export function pageOf(node: Node, root: Element): number | undefined {
 	const el = node instanceof Element ? node : node.parentElement;

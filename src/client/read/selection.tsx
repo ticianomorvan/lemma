@@ -6,7 +6,7 @@ import { MessageSquarePlus, StickyNote } from "lucide-react";
 import { type RefObject, useEffect, useState } from "react";
 import { cn } from "#lib/utils.ts";
 import type { Anchor } from "../../shared/protocol.ts";
-import { pageOf } from "./anchors.ts";
+import { clipToPage, pageOf } from "./anchors.ts";
 
 type Pending = { anchor: Anchor; range: Range; rect: DOMRect };
 
@@ -32,11 +32,11 @@ export function SelectionActions({
 		const read = () => {
 			frame = 0;
 			const sel = getSelection();
-			const text = sel?.toString().replace(/\s+/g, " ").trim();
-			if (!sel || !text || sel.rangeCount === 0) return setPending(undefined);
-			const range = sel.getRangeAt(0);
-			// The page the selection starts on; a quote that runs onto the next
-			// page still belongs to the first.
+			if (!sel || sel.rangeCount === 0) return setPending(undefined);
+			const range = clipToPage(sel.getRangeAt(0));
+			const text = range.toString().replace(/\s+/g, " ").trim();
+			if (!text) return setPending(undefined);
+			// The page the selection starts on, which `clipToPage` cut it to.
 			const page = root.current && pageOf(range.startContainer, root.current);
 			if (!page) return setPending(undefined);
 			setPending({
@@ -66,7 +66,10 @@ export function SelectionActions({
 	if (!pending) return null;
 	const touch = matchMedia("(pointer: coarse)").matches;
 	const { rect } = pending;
-	const top = touch ? rect.bottom + 10 : rect.top - 44;
+	// Above the selection, unless that would cover the header (or on touch).
+	const floor = (root.current?.getBoundingClientRect().top ?? 0) + 8;
+	const below = touch || rect.top - 44 < floor;
+	const top = Math.max(floor, below ? rect.bottom + 10 : rect.top - 44);
 	const left = Math.min(
 		Math.max(8, rect.left + rect.width / 2 - 96),
 		innerWidth - 200,
@@ -82,10 +85,10 @@ export function SelectionActions({
 		<div
 			role="toolbar"
 			aria-label="Selección"
-			style={{ top: Math.max(8, top), left }}
+			style={{ top, left }}
 			className={cn(
 				"select-pop fixed z-40 flex items-center gap-0.5 rounded-full bg-foreground p-1 text-background shadow-lg",
-				touch ? "origin-top" : "origin-bottom",
+				below ? "origin-top" : "origin-bottom",
 			)}
 			// Keep the selection while pressing.
 			onPointerDown={(e) => e.preventDefault()}

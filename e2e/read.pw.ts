@@ -178,3 +178,44 @@ test("on a phone, the visible page's cards sit in a strip and the chat is a shee
 	await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
 	await expect(page.getByLabel("Mensaje")).toBeVisible();
 });
+
+test("a selection that runs onto the next page quotes only the first page", async ({
+	page,
+}) => {
+	const { id } = await openSession(page);
+	await page.locator('[data-page="4"]').scrollIntoViewIfNeeded();
+	await expect(
+		page.locator('[data-page="4"] .textLayer span', { hasText: "Ejercicio 1" }),
+	).toBeAttached({ timeout: 15_000 });
+	await page.locator('[data-page="3"]').scrollIntoViewIfNeeded();
+	const line = page.locator('[data-page="3"] .textLayer span', {
+		hasText: "Entonces",
+	});
+	await expect(line).toBeAttached({ timeout: 15_000 });
+	await line.scrollIntoViewIfNeeded();
+	await page.evaluate(() => {
+		const span = (n: number, text: string) =>
+			[...document.querySelectorAll(`[data-page="${n}"] .textLayer span`)].find(
+				(s) => s.textContent?.includes(text),
+			)?.firstChild as Text;
+		const range = document.createRange();
+		range.setStart(span(3, "Entonces"), 0);
+		range.setEnd(span(4, "Capitulo 4"), 8);
+		getSelection()?.removeAllRanges();
+		getSelection()?.addRange(range);
+	});
+	const noted = page.waitForRequest((r) => r.url().endsWith(`/${id}/notes`));
+	await page
+		.getByRole("toolbar", { name: "Selección" })
+		.getByRole("button", { name: "Nota" })
+		.click();
+	await page.getByRole("button", { name: "Guardar", exact: true }).click();
+	const { anchor } = (await noted).postDataJSON() as {
+		anchor: { page: number; text: string };
+	};
+	expect(anchor).toEqual({
+		path: PDF,
+		page: 3,
+		text: "Entonces |a_n| < |L| + 1 para todo n > N.",
+	});
+});

@@ -585,7 +585,7 @@ export function agentMessage(
 				"The student added these notes to the session since your last answer:",
 				...notes.map(
 					(n) =>
-						`- On ${n.anchor.path}, page ${n.anchor.page}, they marked "${oneLine(n.anchor.text)}"${n.text ? `: ${n.text}` : "."}`,
+						`- On ${attr(n.anchor.path)}, page ${n.anchor.page}, they marked "${oneLine(n.anchor.text)}"${n.text ? `: ${n.text}` : "."}`,
 				),
 				"</notes>",
 			].join("\n"),
@@ -595,9 +595,10 @@ export function agentMessage(
 		const { path, page, text } = user.anchor;
 		parts.push(
 			[
-				`<passage path="${path}" page="${page}">`,
+				`<passage path="${attr(path)}" page="${page}">`,
 				"The student selected this passage on the page they are reading and asks about it:",
-				text.trim(),
+				// The quote is the PDF's text: it may not close the tag.
+				text.trim().replace(/<(\/?passage)/gi, "&lt;$1"),
 				"</passage>",
 			].join("\n"),
 		);
@@ -605,6 +606,9 @@ export function agentMessage(
 	parts.push(user.text);
 	return parts.join("\n\n");
 }
+
+const attr = (value: string) =>
+	value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
 /**
  * The notes after the transcript's last question: the ones Claude hasn't
