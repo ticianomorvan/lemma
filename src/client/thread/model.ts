@@ -110,11 +110,11 @@ function firstLine(expr: string): string {
 	return rest.length > 0 ? `${first.trim()} …` : first.trim();
 }
 
-/** One line of plain text: no HTML comments, math delimiters or extra spaces. */
+/** One line of plain text: no HTML comments, math delimiters, emphasis marks or extra spaces. */
 export const snippet = (text: string) =>
 	text
 		.replace(/<!--[\s\S]*?-->/g, "")
-		.replace(/\$+|\\[()[\]]/g, "")
+		.replace(/\$+|\\[()[\]]|\*+/g, "")
 		.replace(/\s+/g, " ")
 		.trim();
 

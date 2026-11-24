@@ -9,6 +9,8 @@
 		"dev:server": "LEMMA_DEV=1 bun --watch src/server/main.ts",
 		"dev:client": "bunx --bun vite",
 		"build": "bunx --bun vite build",
+		"build:prototype": "bunx --bun vite build --mode prototype",
+		"preview:prototype": "bun run build:prototype && bunx --bun vite preview --mode prototype",
 		"start": "NODE_ENV=production bun src/server/main.ts",
 		"typecheck": "tsc --noEmit",
 		"lint": "biome check .",
