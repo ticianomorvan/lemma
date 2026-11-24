@@ -310,7 +310,8 @@ export function partsOf(
 	return parts;
 }
 
-const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+/** Text on one line, whitespace runs collapsed. */
+export const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /** A tool's input as one line: compact JSON, or the partial text on one line. */
 function compactJson(text: string) {

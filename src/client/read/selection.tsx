@@ -6,6 +6,7 @@ import { MessageSquarePlus, StickyNote } from "lucide-react";
 import { type RefObject, useEffect, useState } from "react";
 import { cn } from "#lib/utils.ts";
 import type { Anchor } from "../../shared/protocol.ts";
+import { pageOf } from "./anchors.ts";
 
 type Pending = { anchor: Anchor; range: Range; rect: DOMRect };
 
@@ -36,14 +37,12 @@ export function SelectionActions({
 			const range = sel.getRangeAt(0);
 			// The page the selection starts on; a quote that runs onto the next
 			// page still belongs to the first.
-			const node = range.startContainer;
-			const el = node instanceof Element ? node : node.parentElement;
-			const page = el?.closest<HTMLElement>("[data-page]");
-			if (!page || !root.current?.contains(page)) return setPending(undefined);
+			const page = root.current && pageOf(range.startContainer, root.current);
+			if (!page) return setPending(undefined);
 			setPending({
 				anchor: {
 					path,
-					page: Number(page.dataset.page),
+					page,
 					text: text.slice(0, MAX_QUOTE),
 				},
 				range: range.cloneRange(),

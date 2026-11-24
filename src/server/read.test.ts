@@ -191,6 +191,32 @@ test("a note is stored as a `> [!note]` entry, broadcast, and sent to Claude wit
 	expect(driver.pushed[2]).toBe("tres");
 });
 
+test("a note written while no agent runs keeps the resume and still reaches Claude", async () => {
+	const first = await serve({ streams: ["math"] });
+	const a = await Client.subscribe(first.server, first.id);
+	await first.api(`/api/sessions/${first.id}/messages`, {
+		clientMsgId: "a",
+		text: "uno",
+	});
+	await turnEnds(1)(a);
+	await first.server.stop(true);
+
+	const second = await serve(
+		{ streams: [] },
+		{ driver: first.driver, studyDir: first.dir, create: false },
+	);
+	const b = await Client.subscribe(second.server, first.id);
+	await second.api(`/api/sessions/${first.id}/notes`, { anchor, text: "ojo" });
+	await second.api(`/api/sessions/${first.id}/messages`, {
+		clientMsgId: "b",
+		text: "dos",
+	});
+	await turnEnds(1)(b);
+	expect(first.driver.started[1]?.resumed).toBe(true);
+	expect(first.driver.pushed[1]).toContain('they marked "Sea X');
+	expect(first.driver.pushed[1]).toEndWith("dos");
+});
+
 test("a note with no text is a highlight; an empty quote is refused", async () => {
 	const { api, id, dir } = await serve({ streams: ["math"] });
 	const ok = await api(`/api/sessions/${id}/notes`, { anchor });

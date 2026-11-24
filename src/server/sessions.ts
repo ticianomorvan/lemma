@@ -39,6 +39,7 @@ import {
 	appendEntry,
 	bodyHash,
 	format,
+	oneLine,
 	type Part,
 	parseBody,
 	partsOf,
@@ -71,11 +72,6 @@ type LiveSession = {
 	 * longer matches was edited under it, and the next turn starts over.
 	 */
 	agentHash?: string;
-	/**
-	 * Notes added while the live agent was in step with the file; they go to
-	 * Claude ahead of the next message it gets.
-	 */
-	unsent: Note[];
 	/** An interrupt the agent hasn't acknowledged yet. */
 	interrupting?: Promise<void>;
 	/** A turn stopped before its agent existed; interrupted once it does. */
@@ -198,10 +194,10 @@ export class Sessions {
 
 	/**
 	 * Appends a note (a highlight, with or without text) to the transcript. It
-	 * starts no turn; Claude gets it with the next message. A live agent in
-	 * step with the file stays so (the note is sent ahead of its next
-	 * message); any other start sees a body hash that no longer matches and
-	 * reseeds, notes included.
+	 * starts no turn. A note never makes the agent start over: hashes that
+	 * matched the file before it (the live agent's and the front matter's)
+	 * are moved past it, and the next message carries every note after the
+	 * last question (see `next`).
 	 */
 	note(id: string, body: NoteBody): NoteResponse | undefined {
 		const s = this.load(id);
@@ -215,11 +211,13 @@ export class Sessions {
 		};
 		const before = read(this.folder, s.path);
 		const after = appendEntry(before, { kind: "note", ...note });
-		write(this.folder, s.path, after);
-		if (s.agent && bodyHash(before.body) === s.agentHash) {
-			s.agentHash = bodyHash(after.body);
-			s.unsent.push(note);
+		const was = bodyHash(before.body);
+		const now = bodyHash(after.body);
+		if (after.meta.sdk_body_hash === was) {
+			after.meta = { ...after.meta, sdk_body_hash: now };
 		}
+		write(this.folder, s.path, after);
+		if (s.agent && s.agentHash === was) s.agentHash = now;
 		this.emit(id, s, { type: "note", ...note });
 		return { id: note.id };
 	}
@@ -296,7 +294,7 @@ export class Sessions {
 		} catch {
 			return undefined;
 		}
-		const s: LiveSession = { path, view, seq: 0, unsent: [] };
+		const s: LiveSession = { path, view, seq: 0 };
 		this.live.set(id, s);
 		return s;
 	}
@@ -316,12 +314,14 @@ export class Sessions {
 		this.emit(id, s, { type: "turn_start", turnId: user.turnId });
 		let start: { resumeId?: string; seed?: string };
 		let asked: string;
+		let notes: Note[];
 		try {
 			const before = read(this.folder, s.path);
 			const hash = bodyHash(before.body);
 			if (s.agent && hash !== s.agentHash) this.stop(s);
 			const { sdk_session_id, sdk_body_hash } = before.meta;
 			const history = before.body.trim();
+			notes = notesSinceLastQuestion(before.body);
 			start = {
 				...(sdk_session_id && sdk_body_hash === hash
 					? { resumeId: sdk_session_id }
@@ -354,10 +354,8 @@ export class Sessions {
 					s.agentHash = asked;
 					void this.run(id, s, agent);
 				}
-				// A new agent was seeded with the file, notes included.
-				const notes = fresh ? [] : s.unsent.splice(0);
-				if (fresh) s.unsent = [];
-				agent.push(agentMessage(user, notes));
+				// An agent seeded with the file has its notes already.
+				agent.push(agentMessage(user, fresh && !agent.resumed ? [] : notes));
 				if (s.cancel === user.turnId) {
 					s.cancel = undefined;
 					void this.interrupt(id);
@@ -405,13 +403,7 @@ export class Sessions {
 			const before = read(this.folder, s.path);
 			const after = appendEntry(before, { kind: "answer", parts, reason });
 			const agent = s.agent;
-			// Notes Claude hasn't been sent yet aren't in its session: leave the
-			// hash unrecorded, so a restart reseeds with them.
-			if (
-				agent &&
-				bodyHash(before.body) === s.agentHash &&
-				s.unsent.length === 0
-			) {
+			if (agent && bodyHash(before.body) === s.agentHash) {
 				s.agentHash = bodyHash(after.body);
 				after.meta = {
 					...after.meta,
@@ -462,7 +454,6 @@ export class Sessions {
 
 	private stop(s: LiveSession) {
 		clearTimeout(s.idle);
-		s.unsent = [];
 		const agent = s.agent;
 		s.agent = undefined;
 		s.agentHash = undefined;
@@ -615,7 +606,25 @@ export function agentMessage(
 	return parts.join("\n\n");
 }
 
-const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+/**
+ * The notes after the transcript's last question: the ones Claude hasn't
+ * been sent. (A note written during a turn goes with the next message.)
+ */
+function notesSinceLastQuestion(body: string): Note[] {
+	const entries = parseBody(body);
+	const last = entries.findLastIndex((e) => e.kind === "user");
+	return entries.slice(last + 1).flatMap((e, i) =>
+		e.kind === "note"
+			? [
+					{
+						id: String(i),
+						anchor: e.anchor,
+						...(e.text ? { text: e.text } : {}),
+					},
+				]
+			: [],
+	);
+}
 
 /** The note a fresh agent gets ahead of its first message. */
 function seedFrom(history: string) {

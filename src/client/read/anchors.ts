@@ -17,6 +17,16 @@ const ROOT = "[data-pdf]";
 
 const pageSelector = (page: number) => `${ROOT} [data-page="${page}"]`;
 
+/** Marks the element that scrolls the pages; `revealAnchor` scrolls it. */
+export const SCROLLER = { "data-pdf-scroller": "" } as const;
+
+/** The page a DOM node sits on, if it is on the open PDF inside `root`. */
+export function pageOf(node: Node, root: Element): number | undefined {
+	const el = node instanceof Element ? node : node.parentElement;
+	const page = el?.closest<HTMLElement>(`${ROOT} [data-page]`);
+	return page && root.contains(page) ? Number(page.dataset.page) : undefined;
+}
+
 // ── Text layers ──────────────────────────────────────────────────────────────
 
 let version = 0;

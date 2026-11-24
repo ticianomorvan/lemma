@@ -13,6 +13,7 @@
  *   matched against its range here.
  */
 import "react-pdf/dist/Page/TextLayer.css";
+import "./pdf-pages.css";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
 	Suspense,

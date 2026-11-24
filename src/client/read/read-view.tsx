@@ -51,7 +51,7 @@ import {
 	type ThreadActions,
 } from "../thread/model.ts";
 import { Citation, Thread } from "../thread/thread.tsx";
-import { anchorRange, revealAnchor } from "./anchors.ts";
+import { anchorRange, revealAnchor, SCROLLER } from "./anchors.ts";
 import { type Group, groups as groupsOf, marginItems } from "./items.ts";
 import { type Draft, Gutter, Margin } from "./margin.tsx";
 import type { Mark } from "./pdf-pages.tsx";
@@ -298,7 +298,7 @@ function Read({
 		>
 			<div
 				ref={scroller}
-				data-pdf-scroller
+				{...SCROLLER}
 				className="min-h-0 overflow-y-auto overscroll-contain"
 			>
 				<div
@@ -605,7 +605,7 @@ function PhoneRead({
 			<div className="relative h-full min-h-0">
 				<div
 					ref={scroller}
-					data-pdf-scroller
+					{...SCROLLER}
 					className="h-full overflow-y-auto overscroll-contain px-2 pt-2 pb-40"
 				>
 					<div className="sticky top-0 z-10 mb-2 flex justify-center">

@@ -11,9 +11,9 @@ import { z } from "zod";
 export const CALC_TOOL = "mcp__study__calc";
 
 export const Anchor = z.object({
-	path: z.string().min(1),
+	path: z.string().min(1).max(1024),
 	page: z.number().int().positive(),
-	text: z.string(),
+	text: z.string().max(10_000),
 });
 export type Anchor = z.infer<typeof Anchor>;
 
@@ -259,10 +259,7 @@ export type PatchSessionBody = z.infer<typeof PatchSessionBody>;
 export const SendMessageBody = z.object({
 	clientMsgId: z.string().min(1).max(100),
 	text: z.string().min(1).max(100_000),
-	anchor: Anchor.extend({
-		path: z.string().min(1).max(1024),
-		text: z.string().max(10_000),
-	}).optional(),
+	anchor: Anchor.optional(),
 	attachmentIds: z.array(z.string()).max(20).optional(),
 });
 export type SendMessageBody = z.infer<typeof SendMessageBody>;
@@ -275,9 +272,8 @@ export type SendMessageResponse = z.infer<typeof SendMessageResponse>;
 
 /** `POST /api/sessions/:id/notes`: a highlight, with or without text. */
 export const NoteBody = z.object({
-	anchor: Anchor.extend({
-		path: z.string().min(1).max(1024),
-		text: z.string().min(1).max(10_000),
+	anchor: Anchor.refine((a) => a.text.trim() !== "", {
+		message: "a note quotes some text",
 	}),
 	text: z.string().max(20_000).optional(),
 });
