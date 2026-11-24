@@ -13,6 +13,8 @@
  */
 import { useSyncExternalStore } from "react";
 import {
+	type Anchor,
+	type NoteBody,
 	type SendMessageBody,
 	ServerMessage,
 	type SessionView,
@@ -24,6 +26,7 @@ import { isUnpaired } from "./unpaired.ts";
 export type Outgoing = {
 	clientMsgId: string;
 	text: string;
+	anchor?: Anchor;
 	/** Set when the POST failed. */
 	failed?: string;
 };
@@ -66,13 +69,15 @@ export class SessionStore {
 
 	getSnapshot = () => this.state;
 
-	/** Sends a message; it shows as outgoing until the server broadcasts it. */
-	async send(text: string) {
+	/**
+	 * Sends a message, quoting `anchor` when given; it shows as outgoing until
+	 * the server broadcasts it.
+	 */
+	async send(text: string, anchor?: Anchor) {
 		const clientMsgId = crypto.randomUUID();
-		this.set({
-			outgoing: [...this.state.outgoing, { clientMsgId, text }],
-		});
-		const body: SendMessageBody = { clientMsgId, text };
+		const message = { clientMsgId, text, ...(anchor ? { anchor } : {}) };
+		this.set({ outgoing: [...this.state.outgoing, message] });
+		const body: SendMessageBody = message;
 		try {
 			const res = await fetch(`/api/sessions/${this.id}/messages`, {
 				method: "POST",
@@ -89,6 +94,25 @@ export class SessionStore {
 						: m,
 				),
 			});
+		}
+	}
+
+	/**
+	 * Adds a note on a passage (no Claude turn). It shows once the server
+	 * broadcasts it; resolves false when the server refused it.
+	 */
+	async note(anchor: Anchor, text?: string): Promise<boolean> {
+		const body: NoteBody = { anchor, ...(text ? { text } : {}) };
+		try {
+			const res = await fetch(`/api/sessions/${this.id}/notes`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			if (await isUnpaired(res)) this.unpaired();
+			return res.ok;
+		} catch {
+			return false;
 		}
 	}
 

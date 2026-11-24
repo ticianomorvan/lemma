@@ -1,3 +1,4 @@
+import "./zod-config.ts";
 import "./globals.css";
 // Copying rendered math copies its LaTeX source.
 import "katex/contrib/copy-tex";

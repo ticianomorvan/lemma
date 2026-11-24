@@ -5,23 +5,44 @@
  *   it everything else), and so does a used or expired `/pair/<code>` link.
  * - Until the study folder is chosen, the first-run screen.
  * - `/` reopens the session used last, or starts one when there is none.
+ * - A session shows as Read (its course's PDF with the thread beside it) or
+ *   Practice (the thread as a notebook); each client keeps its own choice.
  */
 import { SquarePen } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+	lazy,
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
+import { TooltipProvider } from "#components/ui/tooltip.tsx";
+import { cn } from "#lib/utils.ts";
 import { APP_NAME } from "../shared/app.ts";
 import type {
 	CreateSessionResponse,
+	MaterialsResponse,
 	SessionMeta,
+	SessionView,
 	StateResponse,
 } from "../shared/protocol.ts";
 import { DevicesMenu } from "./devices-menu.tsx";
 import { FolderSetup } from "./folder-setup.tsx";
+import { type Layout, useLayout } from "./layout.ts";
 import { isPairingPath, PairingScreen } from "./pairing.tsx";
+import type { Material } from "./read/read-view.tsx";
 import { SessionsMenu } from "./sessions-menu.tsx";
 import { SessionStore, useSession } from "./store.ts";
 import type { ThreadActions } from "./thread/model.ts";
 import { Thread } from "./thread/thread.tsx";
 import { isUnpaired } from "./unpaired.ts";
+import { useViewKeys, type View, ViewSwitch } from "./view-switch.tsx";
+
+/** Read and its PDF renderer load on first use; Practice is the first load. */
+const ReadView = lazy(() =>
+	import("./read/read-view.tsx").then((m) => ({ default: m.ReadView })),
+);
 
 /** The course a new session goes in when the folder has none yet. */
 const FIRST_COURSE = "general";
@@ -46,6 +67,17 @@ export function ChatApp() {
 	}, []);
 	const [attempt, setAttempt] = useState(0);
 	const forget = useCallback(() => open(null, setId, "replace"), []);
+	const layout = useLayout();
+	const [chosenView, setChosenView] = useState(storedView);
+	const chooseView = useCallback((next: View) => {
+		setChosenView(next);
+		save("lemma:view", next);
+	}, []);
+	useViewKeys(chooseView);
+	const files = useMaterials(meta && meta.id === id ? meta.course : undefined);
+	// Until this client picks one: Read when the course has PDFs to read.
+	const view: View | undefined =
+		chosenView ?? (files && (files.length > 0 ? "read" : "practice"));
 	const retry = useCallback(() => {
 		setScreen("app");
 		setAttempt((n) => n + 1);
@@ -110,70 +142,78 @@ export function ChatApp() {
 	}
 
 	return (
-		<div className="grid h-dvh grid-rows-[48px_1fr]">
-			<header className="flex min-w-0 items-center gap-1 border-b bg-card px-3">
-				<span className="mr-1 font-heading text-[17px] font-semibold">
-					{APP_NAME}
-				</span>
-				<SessionsMenu
-					current={id}
-					label={
-						meta && meta.id === id
-							? `${meta.course} · ${meta.title || "Sin título"}`
-							: "Sesiones"
-					}
-					loadState={loadState}
-					onOpen={(next) => open(next, setId, "push")}
-					onCreate={start}
-				/>
-				<span className="flex-1" />
-				<DevicesMenu onUnpaired={unpair} />
-				<button
-					type="button"
-					onClick={() => void start(meta?.course ?? FIRST_COURSE)}
-					className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-[13px] text-muted-foreground transition-[transform,color,border-color] duration-150 ease-out active:scale-[0.97] hover:border-input hover:text-foreground"
-				>
-					<SquarePen aria-hidden className="size-3.5" />
-					<span className="max-sm:sr-only">Nueva sesión</span>
-				</button>
-			</header>
-			<main className="min-h-0">
-				{id ? (
-					<Session
-						key={id}
-						id={id}
-						onMissing={forget}
-						onUnpaired={unpair}
-						onMeta={setMeta}
+		<TooltipProvider delay={300}>
+			<div className="grid h-dvh grid-rows-[48px_minmax(0,1fr)]">
+				<header className="flex min-w-0 items-center gap-1 border-b bg-card px-3">
+					<span className="mr-1 font-heading text-[17px] font-semibold">
+						{APP_NAME}
+					</span>
+					<SessionsMenu
+						current={id}
+						label={
+							meta && meta.id === id
+								? `${meta.course} · ${meta.title || "Sin título"}`
+								: "Sesiones"
+						}
+						loadState={loadState}
+						onOpen={(next) => open(next, setId, "push")}
+						onCreate={start}
 					/>
-				) : screen === "failed" ? (
-					<div className="grid h-full place-content-center justify-items-center gap-3 text-center text-sm text-muted-foreground">
-						<p>No se pudo conectar con el servidor de Lemma.</p>
-						<button
-							type="button"
-							onClick={retry}
-							className="h-8 rounded-lg border bg-card px-3 text-foreground transition-transform duration-150 ease-out active:scale-[0.97]"
-						>
-							Reintentar
-						</button>
-					</div>
-				) : null}
-			</main>
-		</div>
+					{id && <ViewSwitch view={view} onView={chooseView} layout={layout} />}
+					<span className="flex-1" />
+					<DevicesMenu onUnpaired={unpair} />
+					<button
+						type="button"
+						onClick={() => void start(meta?.course ?? FIRST_COURSE)}
+						className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-[13px] text-muted-foreground transition-[transform,color,border-color] duration-150 ease-out active:scale-[0.97] hover:border-input hover:text-foreground"
+					>
+						<SquarePen aria-hidden className="size-3.5" />
+						<span className={cn(layout === "phone" && "sr-only")}>
+							Nueva sesión
+						</span>
+					</button>
+				</header>
+				<main className="min-h-0">
+					{id ? (
+						<Session
+							key={id}
+							id={id}
+							onMissing={forget}
+							onUnpaired={unpair}
+							onMeta={setMeta}
+							view={view}
+							files={files ?? []}
+							layout={layout}
+						/>
+					) : screen === "failed" ? (
+						<div className="grid h-full place-content-center justify-items-center gap-3 text-center text-sm text-muted-foreground">
+							<p>No se pudo conectar con el servidor de Lemma.</p>
+							<button
+								type="button"
+								onClick={retry}
+								className="h-8 rounded-lg border bg-card px-3 text-foreground transition-transform duration-150 ease-out active:scale-[0.97]"
+							>
+								Reintentar
+							</button>
+						</div>
+					) : null}
+				</main>
+			</div>
+		</TooltipProvider>
 	);
 }
 
-function Session({
-	id,
-	onMissing,
-	onUnpaired,
-	onMeta,
-}: {
-	id: string;
+type SessionProps = {
 	onMissing: () => void;
 	onUnpaired: () => void;
 	onMeta: (meta: SessionMeta) => void;
-}) {
+	/** Undefined until the course's materials are known. */
+	view?: View;
+	files: Material[];
+	layout: Layout;
+};
+
+function Session({ id, ...props }: SessionProps & { id: string }) {
 	// Made in an effect, not during render, so StrictMode's second mount gets
 	// its own open socket.
 	const [store, setStore] = useState<SessionStore>();
@@ -182,14 +222,7 @@ function Session({
 		setStore(created);
 		return () => created.close();
 	}, [id]);
-	return store ? (
-		<Live
-			store={store}
-			onMissing={onMissing}
-			onUnpaired={onUnpaired}
-			onMeta={onMeta}
-		/>
-	) : null;
+	return store ? <Live store={store} {...props} /> : null;
 }
 
 function Live({
@@ -197,12 +230,10 @@ function Live({
 	onMissing,
 	onUnpaired,
 	onMeta,
-}: {
-	store: SessionStore;
-	onMissing: () => void;
-	onUnpaired: () => void;
-	onMeta: (meta: SessionMeta) => void;
-}) {
+	view,
+	files,
+	layout,
+}: SessionProps & { store: SessionStore }) {
 	const state = useSession(store);
 	const actions = useMemo<ThreadActions>(
 		() => ({
@@ -225,9 +256,35 @@ function Live({
 		if (meta) onMeta(meta);
 	}, [meta, onMeta]);
 
+	const [chosenFile, setChosenFile] = useState(() =>
+		load(`lemma:file:${store.id}`),
+	);
+	const chooseFile = useCallback(
+		(path: string) => {
+			setChosenFile(path);
+			save(`lemma:file:${store.id}`, path);
+		},
+		[store.id],
+	);
+	const file = openFile(files, chosenFile, state.view);
+
 	return (
 		<div className="relative h-full">
-			<Thread state={state} actions={actions} />
+			{view === "read" ? (
+				<Suspense fallback={null}>
+					<ReadView
+						store={store}
+						state={state}
+						files={files}
+						file={file}
+						onFile={chooseFile}
+						layout={layout}
+						course={state.view?.meta.course ?? ""}
+					/>
+				</Suspense>
+			) : view === "practice" ? (
+				<Thread state={state} actions={actions} />
+			) : null}
 			{state.connection === "offline" && (
 				<div
 					role="status"
@@ -238,6 +295,65 @@ function Live({
 			)}
 		</div>
 	);
+}
+
+/**
+ * The file Read opens: the one this client chose for the session, else the
+ * one the thread quoted last, else the course's first.
+ */
+function openFile(
+	files: Material[],
+	chosen: string | null,
+	view: SessionView | undefined,
+) {
+	const has = (path?: string | null) =>
+		path && files.some((f) => f.path === path) ? path : undefined;
+	const quoted = [
+		...(view?.turns ?? []).map((t) => t.user.anchor?.path),
+		...(view?.notes ?? []).map((n) => n.anchor.path),
+	].findLast((p) => has(p));
+	return has(chosen) ?? has(quoted) ?? files[0]?.path;
+}
+
+/** The PDFs in a course's `materials/`, or undefined while asking. */
+function useMaterials(course: string | undefined) {
+	const [files, setFiles] = useState<{ course: string; files: Material[] }>();
+	useEffect(() => {
+		if (course === undefined) return;
+		let cancelled = false;
+		fetch(`/api/courses/${encodeURIComponent(course)}/materials`)
+			.then((res) => (res.ok ? res.json() : { files: [] }))
+			.catch(() => ({ files: [] }))
+			.then((body: MaterialsResponse) => {
+				if (!cancelled) setFiles({ course, files: body.files });
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [course]);
+	return files && files.course === course ? files.files : undefined;
+}
+
+/** Per-browser preferences; storage may be off (a private window). */
+function load(key: string) {
+	try {
+		return localStorage.getItem(key);
+	} catch {
+		return null;
+	}
+}
+
+function save(key: string, value: string) {
+	try {
+		localStorage.setItem(key, value);
+	} catch {
+		// Not kept; the choice still holds until reload.
+	}
+}
+
+function storedView(): View | null {
+	const v = load("lemma:view");
+	return v === "read" || v === "practice" ? v : null;
 }
 
 async function loadState(): Promise<StateResponse> {

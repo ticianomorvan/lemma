@@ -189,9 +189,9 @@ export default function VegaLite({ source }: { source: string }) {
 		return () => ro.disconnect();
 	}, []);
 	return (
-		<div ref={ref} className="block-scroll">
+		<div ref={ref} className="diagram-scroll">
 			{width > 0 && (
-				<Suspense fallback={<div className="block-loading" />}>
+				<Suspense fallback={<div className="diagram-loading" />}>
 					<Chart source={source} width={width} scheme={scheme} />
 				</Suspense>
 			)}

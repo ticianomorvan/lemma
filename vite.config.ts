@@ -33,6 +33,7 @@ export default defineConfig({
 		proxy: {
 			"/api": api,
 			"/pair": api,
+			"/files": api,
 			"/ws": { target: api, ws: true },
 		},
 	},

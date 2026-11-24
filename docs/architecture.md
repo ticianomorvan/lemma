@@ -31,12 +31,12 @@ There is one package, with no workspaces: `src/server`, `src/client`, `src/share
 | `http` | `Bun.serve` routes, static `dist/`, WS upgrade, auth gate, zod validation | route table |
 | `auth` | pairing codes, device tokens (hashed, in `devices.json`), Host/Origin checks | `new Auth({dir, devOrigin?})` (reads `devices.json` before the port binds), `listen(port)`, `refuse(req) → 'bad_host'\|'bad_origin'\|null`, `check(req) → Device\|null`, `startPairing() → {url, expiresAt}`, `redeem(code, req) → {device, cookie?}\|null`, `revoke(id)`, `list()` |
 | `folder` | all I/O under the study root: path jail (`realpath`), atomic writes, recursive `fs.watch` (150 ms debounce, our own writes ignored by content hash) | `resolve` (the jail), `read`, `writeAtomic`, `list`, `watch`; `saveAttachment` in step 10 |
-| `transcript` | Markdown session file ⇄ typed entries (question, answer, note) | `parse(md) → {meta, entries}`, `appendEntry(transcript, entry)`, `read`/`write`, `bodyHash(body)` |
+| `transcript` | Markdown session file ⇄ typed entries (question, answer with its text, thinking and tool parts, note) | `parse(md) → {meta, entries}`, `appendEntry(transcript, entry)`, `partsOf(blocks)`, `read`/`write`, `bodyHash(body)` |
 | `sessions` | `Map<id, LiveSession>`: queue, in-flight turn, `seq`, reducer | `create`, `list`, `snapshot`, `send`, `interrupt`; `http` subscribes sockets to the topic `s:<id>` it publishes to |
 | `agent` | **the only importer of the SDK**: builds the options, maps SDK messages to our events (`SdkMapper`, shared by `SdkDriver` and `FakeDriver`) | `AgentDriver.start({folder, resumeId?, seed?}) → Promise<{sdkSessionId, resumed, push, interrupt, close, events}>`: it resumes `resumeId` if the SDK still has it, else starts fresh with the seed |
 | `tools/calc` | mathjs + distributions in a Worker; the in-process MCP server `study` that exposes it (`createSdkMcpServer`, `tool()`) lives in `agent/study.ts`, since only `agent` imports the SDK | `calc(expr) → value \| error` |
 | `shared` | zod protocol schemas, the event reducer, `normalize-math` (`\(…\)`/`\[…\]` to dollars and escaping currency, after assistant-ui's heuristics, outside code; plus holding an unclosed display formula as raw source) | imported by server and client, so both reduce events identically |
-| `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store (`client/store.ts`); the thread view and composer in `client/thread/`; Markdown + KaTeX in `client/markdown/`; the diagram blocks in `client/blocks/` | — |
+| `client` | React SPA; state = snapshot + reducer over events, in a `useSyncExternalStore` store (`client/store.ts`); the thread view and composer in `client/thread/`; the Read view in `client/read/` (react-pdf pages, anchors, margin, pins); Markdown + KaTeX in `client/markdown/`; the diagram blocks in `client/blocks/`; the 640 / 1024 px layouts from one `useLayout()` (`client/layout.ts`) | — |
 
 Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake is what makes every integration and Playwright test run offline.
 
@@ -60,7 +60,8 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 3. **Stream.** SDK messages are mapped to our own events. Raw SDK messages never reach clients, so an SDK update can't break the protocol.
 4. **Write the transcript.**
    - The user message is appended when its turn starts (not when it is queued), so each answer follows its own question even when messages queue up. Queued messages a crash loses were never answered. Every append reads the file from disk first.
-   - The assistant turn is appended at `turn_end`, with an atomic write.
+   - The assistant turn is appended at `turn_end`, with an atomic write: its text, thinking summaries and tool calls, in the order they streamed (format in Views → In the transcript), so a reload shows the same thread.
+   - What Claude gets for a question: the notes added since its last message (`<notes>`), the passage it quotes with its file and page (`<passage path page>`), then the text. A note appended while the live agent is in step with the file keeps it so, and goes out with the next message; until then the turn's end records no `sdk_body_hash`, so a restart reseeds with the note in the transcript. A note added with no live agent changes the body, so the next start reseeds.
    - The transcript is append-only and earlier turns are never rewritten. If the file changed on disk during a turn, the server re-reads it and appends to that version, so the user's edit survives.
 5. **Interrupt.** `Query.interrupt()`. The partial answer is appended under `## Claude *(interrumpida)*` (Spanish, like the rest of the file a person reads). An answer cut by an error gets `*(error)*`.
 6. **Resume.** When a session's agent starts, it gets `resumeId: sdk_session_id` only if `sdk_body_hash` matches the body just before the new question; the driver then resumes only if the SDK still has that session (`getSessionInfo(id, {dir: root})`). Otherwise it starts a fresh SDK session with a new random id, seeded with the transcript, and the next turn end records that id.
@@ -80,10 +81,14 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 - `POST /api/sessions {course, title?, mode?}` returns `{id}`. `PATCH /api/sessions/:id {title?, mode?}` (`mode: null` clears it) rewrites the front matter and emits a `meta` event.
 - `GET /api/sessions/:id` returns a snapshot, the same shape as the WebSocket one.
 - `POST /api/sessions/:id/messages {clientMsgId, text, anchor?: {path, page, text}, attachmentIds?}`
-- `POST /api/sessions/:id/notes {anchor, text?}`: your own highlight or note, stored in the transcript, with no Claude turn. Claude sees notes as context on the next send.
+- `POST /api/sessions/:id/notes {anchor, text?}` returns 201 `{id}`: your own highlight or note (the quote must not be empty), stored in the transcript and broadcast as a `note` event, with no Claude turn. Claude sees notes as context on the next send.
 - `POST /api/sessions/:id/interrupt`
 - `POST /api/sessions/:id/attachments` (multipart image) returns `{id, path}`.
-- `GET /api/tree` and `GET /files/*path` (with Range support for pdf.js).
+- `GET /api/courses/:course/materials` returns `{files: [{path, name}]}`: the PDFs under `<course>/materials/` (three folders deep), for Read's file menu. (`GET /api/tree` waits for a view that browses the whole folder.)
+- `GET /files/*path`: a file in the study folder, for pdf.js.
+  - One `bytes=` range gets 206 with `Content-Range`; an unsatisfiable or multi-range header gets 416. pdf.js runs with `disableAutoFetch` and `disableStream`, so it reads only the ranges it needs.
+  - The path goes through the folder's jail (`realpath`); a hidden segment (`.claude/…`), a folder, or anything outside the root (a `..`, an absolute path, a symlink out) is a 404.
+  - The type comes from an allow-list (PDF, PNG, JPEG, Markdown, text); anything else is `application/octet-stream` with `Content-Disposition: attachment`. Every answer carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox; default-src 'none'`, so a file opened in a tab never runs as a page of this origin.
 - `GET /pair/:code` redeems a pairing code: 303 to `/` with the device cookie, or 403 for an unknown, used or expired code (in production with the SPA shell, which shows "Este enlace ya no sirve" at that path). A browser that is already paired spends the code and gets no new device, so the startup link can open on every start.
 - `POST /api/pair` returns `{url, expiresAt}`, a link for another browser (the phone's QR in step 10).
 - `GET /api/devices` returns `{devices: [{id, name, created}], current}`. `DELETE /api/devices/:id` returns 204, and closes that device's open sockets with code 1008. In dev there is no SPA shell on the Bun server, so a used link gets a JSON 403 there.
@@ -123,15 +128,24 @@ A session is one thread. Its views are lenses over that thread, chosen per clien
 - **Read.** The material is in the centre. Anchored turns and notes for the visible page show as margin cards. Opening the chat panel shows the full thread beside the page, and the cards fold into numbered pins in the page gutter. Clicking a pin scrolls the panel.
 - **Practice.** The thread as a notebook document. Anchors become citations that open the page in a drawer. Phone photos go here.
 - **Switching** is instant (a keyboard shortcut and a segmented control, with no animation). Each client keeps its own view, so the desktop can be in Read while the phone is in Practice.
-- **Read in detail.** Step 7 compared three designs in a dev-only route (`src/client/prototypes/read/`, at `/prototypes/read.html` under `bun run dev:client`) and chose the one called *Capas*:
-  - **Cards.** One card per passage, at the passage's height. A passage with several questions and notes shows as one pile with a count and their badges; clicking it opens the list, and clicking a question opens its full answer in place, with "Seguir en el chat". A card that would overlap the one above is pushed down, with a thin leader line back to its passage. Hovering a card or its highlight emphasises both. Highlights fill a passage with questions and underline one with only notes.
+- **Read in detail.** Step 7 compared three designs in a dev-only route and chose the one called *Capas*; step 8 built it on react-pdf and the store, and deleted the route.
+  - **The page.** react-pdf (pdf.js) draws the course PDF with its text layer, from `/files/*`, in a lazy chunk (`client/read/pdf-pages.tsx`). Only pages within a screen and a half are drawn; the rest keep their place. react-pdf suspends while loading, so the file and each page have their own Suspense boundary. In dark mode the canvas is inverted and dimmed.
+  - **Which file.** A pill at the top left shows the file and "p. N de M"; with more than one PDF in `<course>/materials/` it opens a menu of them. Read opens the file this client last chose for the session (kept in `localStorage`), else the file the thread quoted last, else the first. A course with no PDFs shows where to put them.
+  - **Anchors on the page.** An anchor is `{path, page, text}`: the selection's text, whitespace collapsed. `client/read/anchors.ts` finds the quote in its page's text layer ignoring whitespace and keeps it as a DOM Range; the margin, the pins, a click on a passage and the highlights all ask it, so only it and the page renderer know the page's markup. Highlights use the CSS Custom Highlight API (`lemma-question` fills, `lemma-note` underlines, `lemma-active` for the hovered or drafted one), repainted from the current thread, so a passage whose turn or note is gone is no longer painted. The text layer multiplies with the canvas, so a highlight tints the text instead of covering it.
+  - **Cards.** One card per passage, at the passage's height, for the drawn pages. A passage with several questions and notes shows as one pile with a count and their badges; clicking it opens the list, and clicking a question opens its full answer in place, with "Seguir en el chat". A card that would overlap the one above is pushed down, with a thin leader line back to its passage. Hovering a card or its highlight emphasises both. Highlights fill a passage with questions and underline one with only notes. Notes have no place in the thread's order, so they show only as cards and pins.
   - **Select → Ask / Note.** Selecting text on a page shows a floating "Preguntar · Nota" bar (below the selection on touch screens, clear of the system menu). With the chat closed, either one opens a draft card in the margin at the selection's height; with it open, Ask quotes the selection above the composer.
-  - **Pins.** With the chat open, each passage folds into a bar along its left edge with a count. A bar for a single question scrolls the panel to it; a bar for several opens a short list first. The bars' column is always reserved, so opening the chat never moves the page.
+  - **Pins.** With the chat open, each passage folds into a bar along its left edge with a count, as tall as the passage (the height the margin layout measured). A bar for a single question scrolls the panel to it; a bar for several opens a short list first. The bars' column is always reserved, so opening the chat never moves the page.
   - **Panel.** On a desktop (from 1024 px) the chat opens over the margin (440 px), and the page stays put. On a tablet (640–1023 px) there is no room to cover the page, so the chat pushes it aside (360 px). Citations in the panel scroll the page to their passage and flash it.
-  - **Segmented control.** "Leer · Practicar" sits at the start of the header, after the session title, with icons and labels; icons only on a phone. Its tooltip shows the shortcut, ⌥1 / ⌥2 (Alt+1 / Alt+2 elsewhere), matched by key position.
+  - **Segmented control.** "Leer · Practicar" sits in the header after the session title, with icons and labels; icons only on a phone. Its tooltip shows the shortcut, ⌥1 / ⌥2 (Alt+1 / Alt+2 elsewhere), matched by key position. Until a client picks a view, a session opens in Read when its course has PDFs and in Practice otherwise.
   - **Phone (below 640 px).** No margin: a strip along the bottom holds the visible page's cards as a horizontal snap row, with "p. N · K en esta página" and a "Chat · N" button. Tapping a highlight scrolls the strip to its card; tapping a question opens the chat as a bottom sheet scrolled to it. A note opens in its own bottom sheet.
-  - **Practice.** Citations open the page in a drawer: from the right on a tablet or desktop, from the bottom on a phone, scrolled to the passage with it highlighted.
-- **In the transcript,** entries sit under the exact headings `## Tú`, `## Claude` (or `## Claude *(interrumpida)*`, `## Claude *(error)*`) and `## Nota`. A line in an answer that reads exactly like one of them is written with a leading `\`. An anchor is a blockquote at the top of the question, `> [apunte.pdf, p. 3](../../<course>/materials/apunte.pdf#page=3)` followed by the quoted lines. A note is a `> [!note] <link>` blockquote with the quote nested (`> > …`) and the note's text after it. Session files always sit two folders deep, so the `../../` links open in any editor. Only answer text is written; thinking and tool calls are not.
+  - **Practice.** Until step 9 it is the notebook thread as it was. Step 9 adds citations that open the page in a drawer: from the right on a tablet or desktop, from the bottom on a phone, scrolled to the passage with it highlighted.
+- **In the transcript,** entries sit under the exact headings `## Tú`, `## Claude` (or `## Claude *(interrumpida)*`, `## Claude *(error)*`) and `## Nota`. A line in an answer that reads exactly like one of them is written with a leading `\`. An anchor is a blockquote at the top of the question, `> [apunte.pdf, p. 3](../../<course>/materials/apunte.pdf#page=3)` followed by the quoted lines. A note is a `> [!note] <link>` blockquote with the quote nested (`> > …`) and the note's text after it. Session files always sit two folders deep, so the `../../` links open in any editor.
+- **An answer's parts.** Under `## Claude` the answer keeps its blocks in the order they streamed, separated by blank lines, so the panel shows the same thread before and after a restart:
+  - text as Markdown;
+  - a thinking summary as a folded Obsidian-style callout, `> [!thinking]- Pensó` and the summary quoted below it;
+  - a tool call as a `> [!tool] <name>` callout, then its input as one line of compact JSON, then `> ✓ <first line of the result>` or `> ✗ …` (no result line if the turn stopped before it came back).
+
+  An answer line that would read as the first line of either callout is escaped with `\` like a heading. Answers written before step 8 parse as a single text part. `partsOf` turns streamed blocks into parts: empty thinking is dropped, adjacent text blocks are joined, and tool fields become single lines, so the format round-trips exactly.
 
 ## Files
 
@@ -146,6 +160,34 @@ study/
                                        LEMMA_CONFIG_DIR moves it and LEMMA_STUDY_DIR overrides the folder, for tests
 ```
 
+- **Transcripts.** One `.md` per session, headings and anchors as in Views → In the transcript. An answer keeps its thinking and tool calls as callouts, readable in any editor and folded in Obsidian:
+
+  ```md
+  ## Tú
+
+  > [apunte.pdf, p. 3](../../analisis/materials/apunte.pdf#page=3)
+  > Teorema 3. Toda sucesión convergente es acotada.
+
+  explicá esto
+
+  ## Claude
+
+  > [!thinking]- Pensó
+  > Tomo ε = 1 en la definición de límite.
+
+  > [!tool] Read
+  > {"file_path":"analisis/materials/apunte.pdf","pages":"3"}
+  > ✓ PDF file read: 1 page
+
+  Sea $(a_n)$ convergente a $L$…
+
+  ## Nota
+
+  > [!note] [apunte.pdf, p. 3](../../analisis/materials/apunte.pdf#page=3)
+  > > Demostración. Tomemos ε = 1
+  >
+  > repasar para el parcial
+  ```
 - **Photos.**
   - The phone downscales each photo to JPEG with a long edge of at most 2048 px in a canvas before upload. This avoids HEIC files and a native image library on the server.
   - The server sends it to Claude as an `image` block in the next user message.
@@ -184,7 +226,8 @@ study/
   - Graphviz, Mermaid and Vega output is parsed as SVG and sanitized (`client/blocks/sanitize-svg.ts`) against an allow-list: only drawing elements in the SVG namespace survive (no `script`, `foreignObject`, `image`, `use`, animation, or an XHTML `<img>`/`<meta>`). Links become plain groups. Event handlers, `href`/`src` attributes, and CSS that could fetch (escapes, `@import`, `image-set()`, a `url(...)` outside the document) are removed, in attributes and in `<style>`. The element is then inserted as a node, never re-serialized.
   - Mermaid runs with `securityLevel: 'strict'` and SVG labels. A diagram that brings its own config (`%%{init}%%`, front matter, `@{…}` shapes) is refused, and `secure` locks our keys against any directive missed.
   - Vega parses expressions to an AST run by `vega-interpreter` instead of `new Function`, and its loader refuses every URL, so a spec can't fetch or reach the network. Vega runs on the main thread, so keys that generate data are refused (`sequence`, `keyvals`, a bin `step`) and sizes are capped (`maxbins` 500, density `steps` 1000, `width`/`height`/`step` 4000).
-  - The production server sends a Content-Security-Policy with every page (`CSP` in `server/http.ts`): scripts only from our bundle (plus `'wasm-unsafe-eval'` for Graphviz), `connect-src 'self'`, no objects, frames or `<base>`. It backs up the sanitizer; e2e/blocks.pw.ts fails on any violation.
+  - The production server sends a Content-Security-Policy with every page (`CSP` in `server/http.ts`): scripts only from our bundle (plus `'wasm-unsafe-eval'` for Graphviz), `connect-src 'self'`, no objects, frames or `<base>`. It backs up the sanitizer; e2e/blocks.pw.ts and e2e/read.pw.ts fail on any violation.
+  - The pdf.js worker is a module file in our bundle (`worker-src 'self'`), and pdf.js reads the PDF over `connect-src 'self'`, so step 8 added nothing to the policy. zod's parser compiler probes `new Function`, which the policy refuses and reports, so the client runs zod with `jitless` (`client/zod-config.ts`).
   - Each source is size-capped. Graphviz and Vega still run on the main thread, so a hostile block under the caps can stall the tab; accepted for a single-user local app.
 - **Accepted risk.** On the LAN, a cookie sent over plain HTTP can be sniffed. This is documented, and Tailscale Serve is the hardened option.
 
@@ -204,7 +247,8 @@ study/
   - `bun test`: the reducer, `normalizeMath`, open-fence detection in Markdown, the `plot` expression parser (known values; `constructor`, unknown names and deep nesting rejected), the prompt listing exactly what the renderers accept, the transcript round trip, `calc` (known values; `import`, `eval` and loops rejected), the path jail (symlink escapes), and auth.
   - Auth (`src/server/auth/auth.test.ts`): a 403 for no token on every route, a foreign Host, a foreign Origin (WebSocket upgrades too), a reused or expired code, a revoked token, the gated first-run `POST /api/folder`, and the dev origin outside dev.
   - Integration with the fake driver: two clients receive identical events, a client joining mid-stream gets the snapshot plus the tail, an epoch change after restart, the reseed when the hash differs, and a 403 after a device is revoked.
-  - Playwright on the production build: streamed math with zero `.katex-error`, the diagram fixture page (`/fixtures/blocks.html`, a second Vite entry: one valid and one broken block of each kind, a block still streaming in, and link and click injection probes), a recorded answer with diagrams that never shows an error mid-stream, PDF select then Ask, and a phone-viewport upload seen from a second browser context. It runs the server with `LEMMA_FAKE=1`, which swaps in `FakeDriver`: messages replay `math-rich.jsonl` unless they end in a `<!--fixture:<name>-->` paragraph, and `LEMMA_FAKE_DELAY_MS` paces each SDK message. The same mode serves for trying the UI offline. `FakeDriver` saves a session once a turn reaches its `result`, like the SDK, so sharing one driver between two servers models a restart. `bun run test:e2e` builds first, then runs two servers on empty folders under `.e2e/`: one with a study folder and one at the first-run screen. Before each starts, `e2e/seed-device.ts` pairs one device through the `auth` module and leaves its cookie for `e2e/fixtures.ts`, so every test's browser starts paired; `unpaired(browser)` gives a context without it.
+  - Integration for Read (`src/server/read.test.ts`): `/files/*` answers a Range with 206 and exactly those bytes, and refuses paths outside the folder, symlinks out and hidden files; notes land as `> [!note]` and reach Claude with the next message; an anchored question reaches Claude with its passage; thinking and tool rows survive a restart.
+  - Playwright on the production build: streamed math with zero `.katex-error`, the diagram fixture page (`/fixtures/blocks.html`, a second Vite entry: one valid and one broken block of each kind, a block still streaming in, and link and click injection probes), a recorded answer with diagrams that never shows an error mid-stream, Read (`e2e/read.pw.ts`, on a PDF written by `e2e/pdf.ts`: select on page 3 then Ask sends `page: 3`, a note shows as a card and in the `.md`, ⌥1/⌥2, the phone strip and sheet), and a phone-viewport upload seen from a second browser context. It runs the server with `LEMMA_FAKE=1`, which swaps in `FakeDriver`: messages replay `math-rich.jsonl` unless they end in a `<!--fixture:<name>-->` paragraph, and `LEMMA_FAKE_DELAY_MS` paces each SDK message. The same mode serves for trying the UI offline. `FakeDriver` saves a session once a turn reaches its `result`, like the SDK, so sharing one driver between two servers models a restart. `bun run test:e2e` builds first, then runs two servers on empty folders under `.e2e/`: one with a study folder and one at the first-run screen. Before each starts, `e2e/seed-device.ts` pairs one device through the `auth` module and leaves its cookie for `e2e/fixtures.ts`, so every test's browser starts paired; `unpaired(browser)` gives a context without it.
   - One live smoke test, only under `LIVE=1`.
 - **SDK shapes, confirmed in step 1** (SDK 0.3.330, recorded in `test/fixtures/streams/`, documented in `src/server/agent/map.ts`):
   - `stream_event` is `{event, parent_tool_use_id, uuid, session_id, ttft_ms?}`, where `event` is a raw Messages API stream event. Block indices restart at 0 in every API message.

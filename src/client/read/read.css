@@ -1,0 +1,97 @@
+/* The Read view: passages painted on the PDF, and a few motions. */
+
+@layer components {
+	/*
+	 * Highlights are painted on the text layer, over the page's canvas; the
+	 * layer multiplies with it, so a highlight tints the text instead of
+	 * covering it.
+	 */
+	.pdf-page {
+		background: #fff;
+	}
+	.pdf-page canvas {
+		display: block;
+	}
+	.pdf-page .textLayer {
+		mix-blend-mode: multiply;
+	}
+	/* In dark mode the page is inverted and dimmed, so it doesn't glare. */
+	:root[data-theme="dark"] .pdf-page {
+		background: #262626;
+	}
+	:root[data-theme="dark"] .pdf-page canvas {
+		filter: invert(0.85) hue-rotate(180deg);
+	}
+	:root[data-theme="dark"] .pdf-page .textLayer {
+		mix-blend-mode: screen;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root:not([data-theme="light"]) .pdf-page {
+			background: #262626;
+		}
+		:root:not([data-theme="light"]) .pdf-page canvas {
+			filter: invert(0.85) hue-rotate(180deg);
+		}
+		:root:not([data-theme="light"]) .pdf-page .textLayer {
+			mix-blend-mode: screen;
+		}
+	}
+	/* Over a passage, the text layer's I-beam gives way to a pointer. */
+	[data-over-passage] .textLayer span {
+		cursor: pointer;
+	}
+	[data-flash] {
+		animation: flash 1.2s var(--ease-out);
+	}
+	.select-pop {
+		animation: select-pop 150ms var(--ease-out);
+	}
+	.panel-in {
+		animation: panel-in 240ms var(--ease-drawer);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		[data-flash],
+		.select-pop {
+			animation: none;
+		}
+		.panel-in {
+			animation: fade-in 150ms ease;
+		}
+	}
+}
+
+/*
+ * Passages, drawn with the CSS Custom Highlight API over the text layer
+ * (src/client/read/anchors.ts): questions fill, notes underline, and the
+ * active one (hovered, or its card) and a revealed one are stronger.
+ */
+::highlight(lemma-question) {
+	background-color: color-mix(in oklab, var(--highlight) 70%, transparent);
+}
+::highlight(lemma-note) {
+	text-decoration: underline 3px var(--highlight);
+	text-underline-offset: 2px;
+}
+::highlight(lemma-active),
+::highlight(lemma-flash) {
+	background-color: color-mix(in oklab, var(--highlight), var(--warning) 45%);
+}
+
+@keyframes flash {
+	0%,
+	40% {
+		box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 35%, transparent);
+	}
+}
+@keyframes select-pop {
+	from {
+		opacity: 0;
+		transform: translateY(4px) scale(0.96);
+	}
+}
+@keyframes panel-in {
+	from {
+		transform: translateX(24px);
+		opacity: 0;
+	}
+}

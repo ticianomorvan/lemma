@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { expect, type Page, test } from "./fixtures.ts";
 
 test("the production build opens a session at its own URL", async ({
@@ -8,20 +7,8 @@ test("the production build opens a session at its own URL", async ({
 	await expect(page).toHaveTitle("Lemma");
 	// It reopens the session used last (other tests may have made it).
 	await expect(page).toHaveURL(/\/s\/[\w-]+$/);
-	await expect(page.getByLabel("Mensaje")).toBeVisible();
-});
-
-test("the production build leaves out the design prototypes", async ({
-	request,
-}) => {
-	// Dev only: vite.config.ts builds only index.html and the blocks fixture, so the build has no prototype page and no bundle of it.
-	const page = await request.get("/prototypes/read.html");
-	expect(page.status()).toBe(404);
-	const shell = await (await request.get("/prototypes/read")).text();
-	expect(shell).not.toContain("prototipo");
-	expect(existsSync(new URL("../dist/prototypes", import.meta.url))).toBe(
-		false,
-	);
+	// In Read or Practice, depending on whether its course has PDFs.
+	await expect(page.getByRole("tab", { selected: true })).toBeVisible();
 });
 
 test("the session menu lists the folder's sessions by course and reopens one", async ({

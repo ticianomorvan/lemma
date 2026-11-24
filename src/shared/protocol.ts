@@ -259,7 +259,10 @@ export type PatchSessionBody = z.infer<typeof PatchSessionBody>;
 export const SendMessageBody = z.object({
 	clientMsgId: z.string().min(1).max(100),
 	text: z.string().min(1).max(100_000),
-	anchor: Anchor.optional(),
+	anchor: Anchor.extend({
+		path: z.string().min(1).max(1024),
+		text: z.string().max(10_000),
+	}).optional(),
 	attachmentIds: z.array(z.string()).max(20).optional(),
 });
 export type SendMessageBody = z.infer<typeof SendMessageBody>;
@@ -269,6 +272,31 @@ export const SendMessageResponse = z.object({
 	queued: z.boolean(),
 });
 export type SendMessageResponse = z.infer<typeof SendMessageResponse>;
+
+/** `POST /api/sessions/:id/notes`: a highlight, with or without text. */
+export const NoteBody = z.object({
+	anchor: Anchor.extend({
+		path: z.string().min(1).max(1024),
+		text: z.string().min(1).max(10_000),
+	}),
+	text: z.string().max(20_000).optional(),
+});
+export type NoteBody = z.infer<typeof NoteBody>;
+
+export const NoteResponse = z.object({ id: z.string() });
+export type NoteResponse = z.infer<typeof NoteResponse>;
+
+/** `GET /api/courses/:course/materials`: the PDFs under `<course>/materials/`. */
+export const MaterialsResponse = z.object({
+	files: z.array(
+		z.object({
+			/** Relative to the study root, with `/` separators. */
+			path: z.string(),
+			name: z.string(),
+		}),
+	),
+});
+export type MaterialsResponse = z.infer<typeof MaterialsResponse>;
 
 export const InterruptResponse = z.object({
 	/** False when no turn was running. */

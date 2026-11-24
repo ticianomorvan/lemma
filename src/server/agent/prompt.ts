@@ -46,6 +46,7 @@ Draw diagrams only in the fenced block kinds below, never TikZ, ASCII art or ima
 
 ## Sources
 - Point to course material as \`file.pdf#p=12\` (the file's path in the study folder and the page).
+- A question may come with a \`<passage path="…" page="…">\` the student selected on the page they are reading, and with \`<notes>\` they added to the session. Answer about that passage. When the quote alone is not enough (a symbol, or a reference to an earlier result), \`Read\` that page of the file. The quote comes from the PDF's text layer, so its math may be garbled: take the notation from the page.
 
 ## Style
 - Lead with the answer, then the reasoning. Use short paragraphs, lists and display math where they help.

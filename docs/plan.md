@@ -20,7 +20,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 | `zod` | 4.6.7 |
 | `mathjs` | 15.2.0 |
 | `@stdlib/stats-base-dists-*` (15 packages, step 5) | 0.2.3–0.3.1 |
-| `react-pdf` | 11.1.0 |
+| `react-pdf`, `pdfjs-dist` | 11.1.0, 6.5.438 (pinned to react-pdf's own) |
 | `@viz-js/viz` | 3.31.0 |
 | `d3-scale`, `d3-shape` | 4.0.3, 3.2.1 |
 | `vega`, `vega-lite`, `vega-interpreter` | 6.4.0, 6.5.0, 2.3.2 |

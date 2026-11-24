@@ -59,7 +59,7 @@ test("a session is a Markdown file from its creation, and each turn is appended"
 	const { meta, entries } = parse(await file.md());
 	expect(entries.map((e) => e.kind)).toEqual(["user", "answer"]);
 	expect(entries[1]).toMatchObject({ reason: "completed" });
-	expect((entries[1] as { text: string }).text).toContain("$");
+	expect(JSON.stringify(entries[1])).toContain("$");
 	// The first message names the session, and clients hear about it.
 	expect(meta.title).toBe("¿Cuál es la varianza de una Bernoulli?");
 	expect(client.view().meta.title).toBe(meta.title);

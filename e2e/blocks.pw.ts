@@ -21,7 +21,7 @@ const BODY: Record<(typeof KINDS)[number], string> = {
 };
 
 const block = (page: Page, id: string) =>
-	page.locator(`[data-case="${id}"] .block`);
+	page.locator(`[data-case="${id}"] .diagram`);
 
 /** Opens the fixture page; the list collects any dialog or CSP violation. */
 async function openFixtures(page: Page, query = "") {
@@ -52,19 +52,19 @@ test("each valid block renders, and each broken one shows its source and the err
 		await expect(broken).toHaveAttribute("data-state", "error", {
 			timeout: 15_000,
 		});
-		await expect(broken.locator(".block-error")).toContainText(
+		await expect(broken.locator(".diagram-error")).toContainText(
 			"No se pudo dibujar",
 		);
-		await expect(broken.locator(".block-source")).not.toBeEmpty();
+		await expect(broken.locator(".diagram-source")).not.toBeEmpty();
 	}
 	// The error names the problem.
 	await expect(
-		block(page, "plot-broken").locator(".block-error"),
+		block(page, "plot-broken").locator(".diagram-error"),
 	).toContainText("nombre desconocido «alert»");
 	await expect(
-		block(page, "vega-lite-broken").locator(".block-error"),
+		block(page, "vega-lite-broken").locator(".diagram-error"),
 	).toContainText("no se cargan URLs");
-	await expect(block(page, "dot-broken").locator(".block-source")).toHaveText(
+	await expect(block(page, "dot-broken").locator(".diagram-source")).toHaveText(
 		"digraph { a -> }",
 	);
 	// tan(x) on [-4, 4] has poles at ±π/2: three branches, not one joined line.
@@ -74,7 +74,7 @@ test("each valid block renders, and each broken one shows its source and the err
 	expect(tan?.match(/M/g)?.length).toBe(3);
 	// A block whose fence hasn't closed shows its source, not an error.
 	await expect(block(page, "pending")).toHaveAttribute("data-state", "pending");
-	await expect(block(page, "pending").locator(".block-source")).toContainText(
+	await expect(block(page, "pending").locator(".diagram-source")).toContainText(
 		'"xDomain"',
 	);
 	// The proof's discharged assumption and its rule light up together.
@@ -86,7 +86,7 @@ test("each valid block renders, and each broken one shows its source and the err
 		.getByRole("button", { name: "Fuente" })
 		.click();
 	await expect(
-		block(page, "fitch-valid").locator(".block-source"),
+		block(page, "fitch-valid").locator(".diagram-source"),
 	).toContainText('"lines"');
 	expect(dialogs).toEqual([]);
 });
@@ -103,7 +103,7 @@ test("links and handlers in model-written diagrams are stripped", async ({
 	await expect(block(page, "mermaid-click")).toContainText("Inicio");
 	const unsafe = await page.evaluate(() => {
 		const found: string[] = [];
-		for (const el of document.querySelectorAll(".block *")) {
+		for (const el of document.querySelectorAll(".diagram *")) {
 			if (el.localName === "a" || el.localName === "foreignObject") {
 				found.push(el.localName);
 			}
@@ -131,7 +131,7 @@ test("blocks that bring their own config or generate data are refused", async ({
 		await expect(block(page, id)).toHaveAttribute("data-state", "error", {
 			timeout: 15_000,
 		});
-		await expect(block(page, id).locator(".block-error")).toContainText(
+		await expect(block(page, id).locator(".diagram-error")).toContainText(
 			message,
 		);
 	}
@@ -211,7 +211,7 @@ test("blocks fit a phone and follow dark mode", async ({ page }) => {
 		390,
 	);
 	const right = await page
-		.locator(".block")
+		.locator(".diagram")
 		.evaluateAll((els) =>
 			Math.max(...els.map((e) => e.getBoundingClientRect().right)),
 		);
@@ -239,10 +239,10 @@ test("a streamed answer with diagrams never flashes an error", async ({
 		w.pending = 0;
 		new MutationObserver(() => {
 			w.blockErrors += document.querySelectorAll(
-				'.block[data-state="error"], .katex-error',
+				'.diagram[data-state="error"], .katex-error',
 			).length;
 			w.pending += document.querySelectorAll(
-				'.block[data-state="pending"]',
+				'.diagram[data-state="pending"]',
 			).length;
 		}).observe(document.body, {
 			childList: true,
@@ -258,7 +258,7 @@ test("a streamed answer with diagrams never flashes an error", async ({
 	});
 	for (const kind of ["dot", "proof", "plot"]) {
 		await expect(
-			page.locator(`.answer .block[data-block="${kind}"]`),
+			page.locator(`.answer .diagram[data-block="${kind}"]`),
 		).toHaveAttribute("data-state", "ok", { timeout: 15_000 });
 	}
 	const seen = await page.evaluate(() => {

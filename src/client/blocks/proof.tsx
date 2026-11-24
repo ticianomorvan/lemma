@@ -25,7 +25,7 @@ function count(n: ProofNode): number {
 function ProofTree({ proof }: { proof: ProofNode }) {
 	const [hot, setHot] = useState<string | null>(null);
 	return (
-		<div className="block-scroll">
+		<div className="diagram-scroll">
 			<div className="pt">
 				<Node node={proof} hot={hot} setHot={setHot} />
 			</div>

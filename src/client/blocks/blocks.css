@@ -3,7 +3,7 @@
  * kind's body. Colours are theme tokens only, so every block follows dark mode.
  */
 
-.block {
+.diagram {
 	margin: 0.4em 0 0.9em;
 	min-width: 0;
 	background: var(--card);
@@ -13,7 +13,7 @@
 	overflow: hidden;
 	font-family: var(--font-serif);
 }
-.block-head {
+.diagram-head {
 	display: flex;
 	align-items: center;
 	gap: 8px;
@@ -23,7 +23,7 @@
 	font: 500 12px / 1 var(--font-sans);
 	color: var(--muted-foreground);
 }
-.block-chip {
+.diagram-chip {
 	display: inline-flex;
 	align-items: center;
 	height: 22px;
@@ -33,11 +33,11 @@
 	color: var(--primary);
 	white-space: nowrap;
 }
-.block-chip.is-error {
+.diagram-chip.is-error {
 	background: color-mix(in oklab, var(--destructive) 14%, transparent);
 	color: var(--destructive);
 }
-.block-toggle {
+.diagram-toggle {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
@@ -51,33 +51,55 @@
 		background-color 150ms var(--ease-out),
 		transform 150ms var(--ease-out);
 }
-.block-toggle:active {
+.diagram-toggle:active {
 	transform: scale(0.97);
 }
-.block-toggle[aria-pressed="true"] {
+.diagram-toggle[aria-pressed="true"] {
 	background: var(--secondary);
 	color: var(--foreground);
 }
 @media (hover: hover) and (pointer: fine) {
-	.block-toggle:hover {
+	.diagram-toggle:hover {
 		color: var(--foreground);
 	}
 }
-.block-toggle:focus-visible {
+.diagram-toggle:focus-visible {
 	outline: 2px solid var(--ring);
 	outline-offset: 1px;
 }
-.block-body {
+.diagram-body {
 	min-width: 0;
 }
-/* Wide diagrams scroll inside the card, like `.katex-display`. */
-.block-scroll {
+/*
+ * Wide diagrams scroll inside the card, like `.katex-display`. A shade at the
+ * edge that has more to show is the hint (a narrow panel or a phone): the
+ * `local` covers scroll with the content and hide the `scroll` shades once
+ * that edge is reached.
+ */
+.diagram-scroll {
 	overflow-x: auto;
 	overflow-y: hidden;
 	padding: 16px 14px;
+	background:
+		linear-gradient(to right, var(--card) 30%, transparent) left / 32px 100%
+		no-repeat local,
+		linear-gradient(to left, var(--card) 30%, transparent) right / 32px 100%
+		no-repeat local,
+		linear-gradient(
+			to right,
+			color-mix(in oklab, var(--foreground) 14%, transparent),
+			transparent
+		)
+		left / 12px 100% no-repeat scroll,
+		linear-gradient(
+			to left,
+			color-mix(in oklab, var(--foreground) 14%, transparent),
+			transparent
+		)
+		right / 12px 100% no-repeat scroll;
 }
 /* `.answer` beats the answer's own `pre` style. */
-.answer .block-source {
+.answer .diagram-source {
 	margin: 0;
 	padding: 10px 12px;
 	border: 0;
@@ -94,20 +116,20 @@
 	overflow-x: auto;
 	max-height: 24em;
 }
-.block-body > .block-source:first-child {
+.diagram-body > .diagram-source:first-child {
 	border-top: 0;
 }
-.block[data-state="pending"] .block-source {
+.diagram[data-state="pending"] .diagram-source {
 	border-style: dashed;
 }
-.block-error {
+.diagram-error {
 	margin: 0;
 	padding: 10px 12px;
 	font: 13.5px / 1.45 var(--font-sans);
 	color: var(--destructive);
 	overflow-wrap: anywhere;
 }
-.block-loading {
+.diagram-loading {
 	height: 120px;
 	margin: 16px 14px;
 	border-radius: 6px;
@@ -122,7 +144,7 @@
 	animation: shimmer 1.6s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-	.block-loading {
+	.diagram-loading {
 		animation: none;
 	}
 }

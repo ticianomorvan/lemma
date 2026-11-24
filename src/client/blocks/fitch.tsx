@@ -8,7 +8,7 @@ import { Tex } from "./tex.tsx";
 export default function Fitch({ source }: { source: string }) {
 	const fitch = parseBlock(fitchSchema, source);
 	return (
-		<div className="block-scroll">
+		<div className="diagram-scroll">
 			<div className="fk">
 				{lines(fitch).map((l) => (
 					<div key={l.n} className="fk-row" data-opens={l.opens || undefined}>
