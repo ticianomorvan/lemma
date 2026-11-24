@@ -114,7 +114,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 - **Proof:** the chosen variant is reviewed in a browser at three widths, and you approve it. The production build doesn't serve the route (`e2e/app.pw.ts`).
 
 ### 8. Read view
-- **Start from** the step 7 route (`src/client/prototypes/read/`): move its views into the app, swap the fixture pages for react-pdf and the fake session for the store, then delete the route.
+- **Start from** the step 7 route (`src/client/prototypes/read/`) and the design it settled (`architecture.md` → Views): move its views into the app, swap the fixture pages for react-pdf and the fake session for the store, then delete the route.
 - **What:** a PDF pane (`react-pdf`, with its text layer and `/files/*` Range support), and select → Ask or Note.
 - **Behavior:** `anchor` on messages and the `notes` route; margin cards for the visible page; the chat panel with pins.
 - **Proof:**

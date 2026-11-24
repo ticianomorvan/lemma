@@ -6,7 +6,6 @@
 import { MessageSquarePlus, StickyNote } from "lucide-react";
 import {
 	Fragment,
-	type ReactNode,
 	type RefObject,
 	useEffect,
 	useState,
@@ -28,8 +27,6 @@ export type Mark = {
 	questions: number;
 	notes: number;
 	active: boolean;
-	/** Rendered at the passage's end (the inline pin style). */
-	after?: ReactNode;
 };
 
 /** Inline Markdown on a page: `$math$`, `**bold**` and `*italic*`. */
@@ -172,7 +169,6 @@ function RunView({
 			className="passage-mark cursor-pointer"
 		>
 			<Rich text={passage.tex} />
-			{mark.after}
 		</span>
 	);
 }

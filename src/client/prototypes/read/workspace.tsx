@@ -45,7 +45,7 @@ import {
 	marginItems,
 	revealAnchor,
 } from "./items.ts";
-import { type Draft, Gutter, InlinePins, Margin } from "./margin.tsx";
+import { type Draft, Gutter, Margin } from "./margin.tsx";
 import {
 	keepRange,
 	type Mark,
@@ -55,7 +55,6 @@ import {
 	useVisiblePage,
 } from "./page.tsx";
 import { type FakeSession, useFakeSession } from "./session.ts";
-import type { Variant } from "./variants.ts";
 
 type View = "read" | "practice";
 type Size = "phone" | "tablet" | "desktop";
@@ -79,7 +78,7 @@ function useSize(): Size {
 
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform);
 
-export function Workspace({ variant }: { variant: Variant }) {
+export function Workspace() {
 	const session = useFakeSession();
 	const size = useSize();
 	const [view, setView] = useState<View>("read");
@@ -97,15 +96,6 @@ export function Workspace({ variant }: { variant: Variant }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
-	const switcher = (
-		<ViewSwitch
-			view={view}
-			onView={setView}
-			style={variant.switcher}
-			size={size}
-		/>
-	);
-
 	return (
 		<TooltipProvider delay={300}>
 			<div className="grid h-dvh grid-rows-[48px_minmax(0,1fr)] bg-background">
@@ -116,17 +106,11 @@ export function Workspace({ variant }: { variant: Variant }) {
 					<span className="min-w-0 truncate text-[13px] text-muted-foreground max-sm:hidden">
 						logica · Deducción natural
 					</span>
-					{variant.switcher === "start" && switcher}
-					<span className="flex-1" />
-					{variant.switcher === "center" && (
-						<div className="absolute left-1/2 -translate-x-1/2">{switcher}</div>
-					)}
-					{variant.switcher === "compact" && switcher}
-					<span id="header-end" className="contents" />
+					<ViewSwitch view={view} onView={setView} size={size} />
 				</header>
 				<main className="relative min-h-0">
 					{view === "read" ? (
-						<Read session={session} variant={variant} size={size} />
+						<Read session={session} size={size} />
 					) : (
 						<Practice session={session} size={size} />
 					)}
@@ -141,16 +125,14 @@ export function Workspace({ variant }: { variant: Variant }) {
 function ViewSwitch({
 	view,
 	onView,
-	style,
 	size,
 }: {
 	view: View;
 	onView: (v: View) => void;
-	style: Variant["switcher"];
 	size: Size;
 }) {
 	const mod = isMac() ? "⌥" : "Alt+";
-	const iconOnly = style === "compact" || size === "phone";
+	const iconOnly = size === "phone";
 	const tab = (
 		value: View,
 		label: string,
@@ -167,9 +149,7 @@ function ViewSwitch({
 					iconOnly && "w-9 px-0",
 				)}
 			>
-				{(style !== "center" || iconOnly) && (
-					<Icon aria-hidden className="size-4" />
-				)}
+				<Icon aria-hidden className="size-4" />
 				{!iconOnly && label}
 			</TabsTrigger>
 		);
@@ -215,8 +195,8 @@ function ChatPanel({
 	/** A turn to bring into view: set by a pin or a card. `n` changes on each request. */
 	target?: { turnId: string; n: number };
 	onClose: () => void;
-	/** `none` where something else closes it (the phone's tab bar). */
-	closeIcon?: "panel" | "x" | "none";
+	/** `panel` where it sits beside the page, `x` where it covers it. */
+	closeIcon?: "panel" | "x";
 }) {
 	const actions = useMemo<ThreadActions>(
 		() => ({
@@ -265,20 +245,18 @@ function ChatPanel({
 				<span className="font-medium">Chat</span>
 				<span className="text-subtle">{count} preguntas</span>
 				<span className="flex-1" />
-				{closeIcon !== "none" && (
-					<button
-						type="button"
-						onClick={onClose}
-						aria-label="Cerrar el chat"
-						className="grid size-8 place-items-center rounded-md text-muted-foreground transition-[color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.97]"
-					>
-						{closeIcon === "panel" ? (
-							<PanelRightClose aria-hidden className="size-4" />
-						) : (
-							<X aria-hidden className="size-4" />
-						)}
-					</button>
-				)}
+				<button
+					type="button"
+					onClick={onClose}
+					aria-label="Cerrar el chat"
+					className="grid size-8 place-items-center rounded-md text-muted-foreground transition-[color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.97]"
+				>
+					{closeIcon === "panel" ? (
+						<PanelRightClose aria-hidden className="size-4" />
+					) : (
+						<X aria-hidden className="size-4" />
+					)}
+				</button>
 			</div>
 			<Thread
 				state={session.state}
@@ -338,11 +316,7 @@ function ChatButton({
 
 // ── Read ─────────────────────────────────────────────────────────────────────
 
-function useMarks(
-	groups: Group[],
-	active: string | undefined,
-	after?: (g: Group) => ReactNode,
-) {
+function useMarks(groups: Group[], active: string | undefined) {
 	return useMemo(() => {
 		const marks = new Map<string, Mark>();
 		for (const g of groups) {
@@ -351,29 +325,19 @@ function useMarks(
 				questions,
 				notes: g.items.length - questions,
 				active: active === g.key,
-				...(after ? { after: after(g) } : {}),
 			});
 		}
 		return marks;
-	}, [groups, active, after]);
+	}, [groups, active]);
 }
 
-function Read({
-	session,
-	variant,
-	size,
-}: {
-	session: FakeSession;
-	variant: Variant;
-	size: Size;
-}) {
+function Read({ session, size }: { session: FakeSession; size: Size }) {
 	const scroller = useRef<HTMLDivElement>(null);
 	const [chat, setChat] = useState(false);
 	const [target, setTarget] = useState<{ turnId: string; n: number }>();
 	const [active, setActive] = useState<string>();
 	const [pending, setPending] = useState<Anchor>();
 	const [draft, setDraft] = useState<Draft>();
-	const [sheetGroup, setSheetGroup] = useState<string>();
 	const page = useVisiblePage(scroller);
 
 	const items = marginItems(session.state, session.notes);
@@ -384,12 +348,7 @@ function Read({
 	}, []);
 	const clearPending = useCallback(() => setPending(undefined), []);
 
-	const inline = variant.pins === "inline" && (chat || size === "phone");
-	const after = useCallback(
-		(g: Group) => <InlinePins group={g} onOpenTurn={openTurn} />,
-		[openTurn],
-	);
-	const marks = useMarks(groups, active, inline ? after : undefined);
+	const marks = useMarks(groups, active);
 
 	const phone = size === "phone";
 	const onAsk = (anchor: Anchor, range: Range) => {
@@ -411,19 +370,12 @@ function Read({
 	};
 	const onPassage = (key: string) => {
 		if (phone) {
-			if (variant.phone === "sheet") setSheetGroup(key);
-			else if (variant.phone === "strip")
-				document.getElementById(`strip-${key}`)?.scrollIntoView({
-					inline: "center",
-					behavior: "smooth",
-					block: "nearest",
-				});
-			else {
-				const first = groups
-					.find((g) => g.key === key)
-					?.items.find((i) => i.kind === "turn");
-				if (first) openTurn(first.key);
-			}
+			// The strip's first card for the passage.
+			document.getElementById(`strip-${key}`)?.scrollIntoView({
+				inline: "center",
+				behavior: "smooth",
+				block: "nearest",
+			});
 			return;
 		}
 		if (chat) {
@@ -437,7 +389,7 @@ function Read({
 	const turnCount =
 		(session.state.view?.turns.length ?? 0) +
 		(session.state.view?.inflight ? 1 : 0);
-	const panel = (closeIcon: "panel" | "x" | "none" = "panel") => (
+	const panel = (closeIcon: "panel" | "x" = "panel") => (
 		<ChatPanel
 			session={session}
 			pending={pending}
@@ -460,7 +412,6 @@ function Read({
 	if (phone) {
 		return (
 			<PhoneRead
-				variant={variant}
 				scroller={scroller}
 				pages={pages}
 				page={page}
@@ -469,8 +420,6 @@ function Read({
 				setChat={setChat}
 				panel={panel}
 				turnCount={turnCount}
-				sheetGroup={sheetGroup}
-				setSheetGroup={setSheetGroup}
 				openTurn={openTurn}
 				draft={draft}
 				onDraftDone={onDraftDone}
@@ -482,19 +431,10 @@ function Read({
 	}
 
 	const desktop = size === "desktop";
-	// A tablet has no room to cover the page: the chat always pushes it there.
-	const push = chat && (!desktop || variant.panel === "push");
-	const swap = chat && desktop && variant.panel === "swap";
-	const overlay = chat && !push && !swap;
-	const marginWidth = !desktop
-		? "w-[248px]"
-		: variant.panel === "swap"
-			? "w-[400px]"
-			: "w-[340px]";
-	// The bars sit left of the page; their column stays while the chat is
-	// closed, so opening it doesn't move the page.
-	const gutterStart = variant.pins === "bars";
-	const gutterEnd = chat && variant.pins === "dots";
+	// On a desktop the chat covers the margin; a tablet has no room to cover
+	// the page, so there it pushes the page aside.
+	const push = chat && !desktop;
+	const overlay = chat && desktop;
 
 	return (
 		<div
@@ -510,39 +450,25 @@ function Read({
 				className="min-h-0 overflow-y-auto overscroll-contain"
 			>
 				<div className="mx-auto flex max-w-full items-start justify-center gap-3 px-4 pt-6 lg:gap-4 lg:px-8 lg:pt-8">
-					{gutterStart && (
-						<Gutter
-							groups={chat ? groups : []}
-							style="bars"
-							onOpenTurn={openTurn}
-							onActive={setActive}
-						/>
-					)}
+					{/* The bars' column stays while the chat is closed, so opening it doesn't move the page. */}
+					<Gutter
+						groups={chat ? groups : []}
+						onOpenTurn={openTurn}
+						onActive={setActive}
+					/>
 					<div className="min-w-0 flex-[0_1_680px] pb-24">{pages}</div>
-					{gutterEnd && (
-						<Gutter
-							groups={groups}
-							style="dots"
-							onOpenTurn={openTurn}
-							onActive={setActive}
-						/>
-					)}
 					{!chat && (
-						<div className={cn("shrink-0", marginWidth)}>
+						<div
+							className={cn("shrink-0", desktop ? "w-[340px]" : "w-[248px]")}
+						>
 							<Margin
 								groups={groups}
-								style={variant.cards}
 								active={active}
 								onActive={setActive}
 								onOpenTurn={openTurn}
 								draft={draft}
 								onDraftDone={onDraftDone}
 							/>
-						</div>
-					)}
-					{swap && (
-						<div className="sticky top-0 -mt-8 h-[calc(100dvh-48px)] w-[400px] shrink-0 border-x">
-							{panel()}
 						</div>
 					)}
 					{overlay && (
@@ -577,7 +503,6 @@ function Read({
 // ── Read on a phone ──────────────────────────────────────────────────────────
 
 function PhoneRead({
-	variant,
 	scroller,
 	pages,
 	page,
@@ -586,43 +511,32 @@ function PhoneRead({
 	setChat,
 	panel,
 	turnCount,
-	sheetGroup,
-	setSheetGroup,
 	openTurn,
 	draft,
 	onDraftDone,
 	selection,
 }: {
-	variant: Variant;
 	scroller: React.RefObject<HTMLDivElement | null>;
 	pages: ReactNode;
 	page: number;
 	groups: Group[];
 	chat: boolean;
 	setChat: (open: boolean) => void;
-	panel: (closeIcon?: "panel" | "x" | "none") => ReactNode;
+	panel: (closeIcon?: "panel" | "x") => ReactNode;
 	turnCount: number;
-	sheetGroup?: string;
-	setSheetGroup: (key: string | undefined) => void;
 	openTurn: (turnId: string) => void;
 	draft?: Draft;
 	onDraftDone: (text: string | null) => void;
 	selection: ReactNode;
 }) {
 	const onPage = groups.filter((g) => g.anchor.page === page);
-	const tabs = variant.phone === "tabs";
-	const sheetItems = groups.find((g) => g.key === sheetGroup);
 
 	return (
-		<div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
-			<div className="relative min-h-0">
+		<div className="h-full min-h-0">
+			<div className="relative h-full min-h-0">
 				<div
 					ref={scroller}
-					className={cn(
-						"h-full overflow-y-auto overscroll-contain px-2 pt-2",
-						variant.phone === "strip" ? "pb-40" : "pb-24",
-						tabs && chat && "hidden",
-					)}
+					className="h-full overflow-y-auto overscroll-contain px-2 pt-2 pb-40"
 				>
 					<div className="sticky top-0 z-10 mb-2 flex justify-center">
 						<span className="rounded-full border bg-card/90 px-2.5 py-0.5 text-[11.5px] text-muted-foreground shadow-sm backdrop-blur tabular-nums">
@@ -631,131 +545,29 @@ function PhoneRead({
 					</div>
 					{pages}
 				</div>
-				{tabs && chat && (
-					<div className="absolute inset-0">{panel("none")}</div>
-				)}
 				{selection}
 
-				{variant.phone === "sheet" && (
-					<button
-						type="button"
-						onClick={() => setChat(true)}
-						className="absolute right-4 bottom-[max(16px,env(safe-area-inset-bottom))] inline-flex h-11 items-center gap-2 rounded-full bg-foreground pr-4 pl-3.5 text-[14px] font-medium text-background shadow-lg transition-transform duration-150 ease-out active:scale-[0.97]"
-					>
-						<MessagesSquare aria-hidden className="size-4" />
-						Chat
-						<span className="rounded-full bg-background/15 px-1.5 text-[12px] tabular-nums">
-							{turnCount}
-						</span>
-					</button>
-				)}
-
-				{variant.phone === "strip" && (
-					<Strip
-						groups={onPage}
-						page={page}
-						openTurn={openTurn}
-						onChat={() => setChat(true)}
-						turnCount={turnCount}
-					/>
-				)}
+				<Strip
+					groups={onPage}
+					page={page}
+					openTurn={openTurn}
+					onChat={() => setChat(true)}
+					turnCount={turnCount}
+				/>
 			</div>
 
-			{tabs && (
-				<nav
-					aria-label="Leer"
-					className="grid grid-cols-2 border-t bg-card pb-[env(safe-area-inset-bottom)]"
-				>
-					{(
-						[
-							[false, "Página", FileText],
-							[true, "Chat", MessagesSquare],
-						] as const
-					).map(([isChat, label, Icon]) => (
-						<button
-							key={label}
-							type="button"
-							aria-pressed={chat === isChat}
-							onClick={() => setChat(isChat)}
-							className="flex h-12 items-center justify-center gap-1.5 text-[13px] text-subtle aria-pressed:font-medium aria-pressed:text-foreground"
-						>
-							<Icon aria-hidden className="size-4" />
-							{label}
-							{isChat && (
-								<span className="rounded-full bg-secondary px-1.5 text-[11px] tabular-nums">
-									{turnCount}
-								</span>
-							)}
-						</button>
-					))}
-				</nav>
-			)}
-
-			{!tabs && (
-				<Sheet open={chat} onOpenChange={setChat}>
-					<SheetContent
-						side="bottom"
-						showCloseButton={false}
-						className="data-[side=bottom]:h-[92dvh] gap-0 overflow-hidden rounded-t-2xl duration-300 ease-(--ease-drawer)"
-					>
-						<SheetTitle className="sr-only">Chat</SheetTitle>
-						<SheetDescription className="sr-only">
-							El hilo de la sesión
-						</SheetDescription>
-						<div className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />
-						<div className="min-h-0 flex-1">{panel("x")}</div>
-					</SheetContent>
-				</Sheet>
-			)}
-
-			<Sheet
-				open={!!sheetItems}
-				onOpenChange={(o) => !o && setSheetGroup(undefined)}
-			>
+			<Sheet open={chat} onOpenChange={setChat}>
 				<SheetContent
 					side="bottom"
 					showCloseButton={false}
-					className="data-[side=bottom]:max-h-[70dvh] gap-0 rounded-t-2xl duration-300 ease-(--ease-drawer)"
+					className="data-[side=bottom]:h-[92dvh] gap-0 overflow-hidden rounded-t-2xl duration-300 ease-(--ease-drawer)"
 				>
-					<div className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />
-					<SheetTitle className="px-4 pt-1 text-[15px]">
-						En este pasaje
-					</SheetTitle>
+					<SheetTitle className="sr-only">Chat</SheetTitle>
 					<SheetDescription className="sr-only">
-						Preguntas y notas sobre el pasaje
+						El hilo de la sesión
 					</SheetDescription>
-					<div className="grid gap-2 overflow-y-auto p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-						{sheetItems?.items.map((item) =>
-							item.kind === "turn" ? (
-								<button
-									key={item.key}
-									type="button"
-									onClick={() => {
-										setSheetGroup(undefined);
-										openTurn(item.key);
-									}}
-									className="grid gap-1 rounded-xl border bg-card px-3 py-2.5 text-left shadow-sm active:scale-[0.99]"
-								>
-									<span className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.06em] text-subtle uppercase">
-										<span className="grid size-[18px] place-items-center rounded-full bg-primary text-[10.5px] text-primary-foreground">
-											{item.n}
-										</span>
-										Pregunta
-									</span>
-									<span className="text-[14px] font-medium">
-										{snippet(item.turn.user.text)}
-									</span>
-								</button>
-							) : (
-								<div
-									key={item.key}
-									className="rounded-xl border border-l-[3px] border-l-highlight bg-card px-3 py-2.5 font-heading text-[14.5px]"
-								>
-									{item.note.text ?? "Resaltado sin texto"}
-								</div>
-							),
-						)}
-					</div>
+					<div className="mx-auto mt-2 mb-1 h-1 w-9 shrink-0 rounded-full bg-input" />
+					<div className="min-h-0 flex-1">{panel("x")}</div>
 				</SheetContent>
 			</Sheet>
 

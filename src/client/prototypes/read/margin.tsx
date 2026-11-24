@@ -17,11 +17,6 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "#components/ui/popover.tsx";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "#components/ui/tooltip.tsx";
 import { cn } from "#lib/utils.ts";
 import type { Anchor } from "../../../shared/protocol.ts";
 import { Markdown } from "../../markdown/lazy.tsx";
@@ -122,13 +117,10 @@ function Leader({ from, to }: { from: number; to: number }) {
 
 // ── The margin ───────────────────────────────────────────────────────────────
 
-export type CardStyle = "stack" | "group" | "focus";
-
 export type Draft = { kind: "ask" | "note"; anchor: Anchor; range: Range };
 
 export function Margin({
 	groups,
-	style,
 	active,
 	onActive,
 	onOpenTurn,
@@ -136,7 +128,6 @@ export function Margin({
 	onDraftDone,
 }: {
 	groups: Group[];
-	style: CardStyle;
 	/** The passage being pointed at or read: its cards are emphasised. */
 	active?: string;
 	onActive: (key: string | undefined) => void;
@@ -146,18 +137,11 @@ export function Margin({
 }) {
 	const column = useRef<HTMLElement>(null);
 	const [open, setOpen] = useState<string>();
-	const [focused, setFocused] = useState<string>();
-	const focus = active ?? focused ?? groups[0]?.key;
 
-	const units: Unit[] = [];
-	if (style === "stack") {
-		for (const g of groups)
-			for (const item of g.items)
-				units.push({ key: item.key, rect: () => anchorRect(item.anchor) });
-	} else {
-		for (const g of groups)
-			units.push({ key: g.key, rect: () => anchorRect(g.anchor) });
-	}
+	const units: Unit[] = groups.map((g) => ({
+		key: g.key,
+		rect: () => anchorRect(g.anchor),
+	}));
 	if (draft)
 		units.push({
 			key: "draft",
@@ -184,79 +168,24 @@ export function Margin({
 		);
 	}
 	for (const g of groups) {
-		const hover = {
-			onPointerEnter: () => onActive(g.key),
-			onPointerLeave: () => onActive(undefined),
-		};
-		if (style === "stack") {
-			for (const item of g.items) {
-				boxes.push(
-					<div
-						key={item.key}
-						ref={ref(item.key)}
-						className="absolute inset-x-0"
-						style={place(item.key)}
-						{...hover}
-					>
-						<ItemCard
-							item={item}
-							open={open === item.key}
-							onToggle={() => setOpen(open === item.key ? undefined : item.key)}
-							onOpenTurn={onOpenTurn}
-							lit={active === g.key}
-						/>
-					</div>,
-				);
-			}
-		} else if (style === "group") {
-			boxes.push(
-				<div
-					key={g.key}
-					ref={ref(g.key)}
-					className="absolute inset-x-0"
-					style={place(g.key)}
-					{...hover}
-				>
-					<GroupCard
-						group={g}
-						open={open}
-						onOpen={setOpen}
-						onOpenTurn={onOpenTurn}
-						lit={active === g.key}
-					/>
-				</div>,
-			);
-		} else {
-			const isFocus = focus === g.key;
-			boxes.push(
-				<div
-					key={g.key}
-					ref={ref(g.key)}
-					className="absolute inset-x-0"
-					style={place(g.key)}
-					{...hover}
-				>
-					{isFocus ? (
-						<div className="grid gap-2">
-							{g.items.map((item) => (
-								<ItemCard
-									key={item.key}
-									item={item}
-									open={open === item.key}
-									onToggle={() =>
-										setOpen(open === item.key ? undefined : item.key)
-									}
-									onOpenTurn={onOpenTurn}
-									lit
-								/>
-							))}
-						</div>
-					) : (
-						<GroupTab group={g} onClick={() => setFocused(g.key)} />
-					)}
-				</div>,
-			);
-		}
+		boxes.push(
+			<div
+				key={g.key}
+				ref={ref(g.key)}
+				className="absolute inset-x-0"
+				style={place(g.key)}
+				onPointerEnter={() => onActive(g.key)}
+				onPointerLeave={() => onActive(undefined)}
+			>
+				<GroupCard
+					group={g}
+					open={open}
+					onOpen={setOpen}
+					onOpenTurn={onOpenTurn}
+					lit={active === g.key}
+				/>
+			</div>,
+		);
 	}
 
 	return (
@@ -501,38 +430,6 @@ function GroupCard({
 	);
 }
 
-/** A passage that isn't the one in focus: one line, so it can't crowd the margin. */
-function GroupTab({ group, onClick }: { group: Group; onClick: () => void }) {
-	const [first] = group.items;
-	const label =
-		first?.kind === "turn" ? first.turn.user.text : (first?.note.text ?? "");
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			className="flex h-8 w-full items-center gap-2 rounded-full border bg-card pr-3 pl-1.5 text-left text-[12.5px] text-muted-foreground shadow-sm transition-[border-color,color,transform] duration-150 ease-out hover:border-input hover:text-foreground active:scale-[0.98]"
-		>
-			<span className="flex -space-x-0.5">
-				{group.items.map((i) =>
-					i.kind === "turn" ? (
-						<span key={i.key} className={cn(badge, "ring-2 ring-card")}>
-							{i.n}
-						</span>
-					) : (
-						<span
-							key={i.key}
-							className="grid size-[18px] place-items-center rounded-full bg-highlight text-highlight-foreground ring-2 ring-card"
-						>
-							<StickyNote aria-hidden className="size-3" />
-						</span>
-					),
-				)}
-			</span>
-			<span className="min-w-0 flex-1 truncate">{snippet(label)}</span>
-		</button>
-	);
-}
-
 function DraftCard({
 	draft,
 	onDone,
@@ -608,17 +505,13 @@ function DraftCard({
 
 // ── Pins (chat open) ─────────────────────────────────────────────────────────
 
-export type PinStyle = "dots" | "bars" | "inline";
-
-/** The gutter beside the page while the chat is open: one pin per question. */
+/** The gutter beside the page while the chat is open: one bar per passage. */
 export function Gutter({
 	groups,
-	style,
 	onOpenTurn,
 	onActive,
 }: {
 	groups: Group[];
-	style: Exclude<PinStyle, "inline">;
 	onOpenTurn: (turnId: string) => void;
 	onActive: (key: string | undefined) => void;
 }) {
@@ -645,65 +538,15 @@ export function Gutter({
 						onPointerEnter={() => onActive(g.key)}
 						onPointerLeave={() => onActive(undefined)}
 					>
-						{style === "dots" ? (
-							g.items.map((item) => (
-								<DotPin key={item.key} item={item} onOpenTurn={onOpenTurn} />
-							))
-						) : (
-							<BarPin
-								group={g}
-								height={r?.height ?? 24}
-								onOpenTurn={onOpenTurn}
-							/>
-						)}
+						<BarPin
+							group={g}
+							height={r?.height ?? 24}
+							onOpenTurn={onOpenTurn}
+						/>
 					</div>
 				);
 			})}
 		</section>
-	);
-}
-
-function DotPin({
-	item,
-	onOpenTurn,
-}: {
-	item: Item;
-	onOpenTurn: (turnId: string) => void;
-}) {
-	const dot =
-		"grid size-[22px] place-items-center rounded-full text-[11px] font-semibold tabular-nums shadow-sm transition-transform duration-150 ease-out hover:scale-110 active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-ring";
-	if (item.kind === "note") {
-		return (
-			<Popover>
-				<PopoverTrigger
-					aria-label="Nota"
-					className={cn(dot, "bg-highlight text-highlight-foreground")}
-				>
-					<StickyNote aria-hidden className="size-3" />
-				</PopoverTrigger>
-				<PopoverContent side="left" className="w-64 font-heading text-[14px]">
-					{item.note.text ?? "Resaltado sin texto"}
-				</PopoverContent>
-			</Popover>
-		);
-	}
-	return (
-		<Tooltip>
-			<TooltipTrigger
-				onClick={() => onOpenTurn(item.turn.id)}
-				aria-label={`Ir a la pregunta ${item.n}`}
-				className={cn(
-					dot,
-					"bg-primary text-primary-foreground",
-					item.streaming && "pin-live",
-				)}
-			>
-				{item.n}
-			</TooltipTrigger>
-			<TooltipContent side="left" className="max-w-60">
-				{snippet(item.turn.user.text)}
-			</TooltipContent>
-		</Tooltip>
 	);
 }
 
@@ -717,7 +560,6 @@ function BarPin({
 	height: number;
 	onOpenTurn: (turnId: string) => void;
 }) {
-	const turns = group.items.filter((i) => i.kind === "turn");
 	const bar = (
 		<>
 			<span
@@ -780,50 +622,7 @@ function BarPin({
 						</div>
 					),
 				)}
-				{turns.length === 0 && null}
 			</PopoverContent>
 		</Popover>
-	);
-}
-
-/** Pins as footnote marks at the end of the passage itself. */
-export function InlinePins({
-	group,
-	onOpenTurn,
-}: {
-	group: Group;
-	onOpenTurn: (turnId: string) => void;
-}) {
-	return (
-		<span className="ml-1 inline-flex gap-0.5 align-[2px] font-sans">
-			{group.items.map((item) =>
-				item.kind === "turn" ? (
-					<button
-						key={item.key}
-						type="button"
-						onClick={(e) => {
-							e.stopPropagation();
-							onOpenTurn(item.turn.id);
-						}}
-						aria-label={`Ir a la pregunta ${item.n}`}
-						className={cn(
-							badge,
-							"h-4 min-w-4 size-auto px-1 text-[10px] transition-transform duration-150 ease-out hover:scale-110 active:scale-95",
-							item.streaming && "pin-live",
-						)}
-					>
-						{item.n}
-					</button>
-				) : (
-					<span
-						key={item.key}
-						title={item.note.text}
-						className="grid size-4 place-items-center rounded-full bg-highlight-foreground/15 text-highlight-foreground"
-					>
-						<StickyNote aria-hidden className="size-2.5" />
-					</span>
-				),
-			)}
-		</span>
 	);
 }
