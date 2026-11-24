@@ -71,6 +71,10 @@ test("/files/* never leaves the study folder", async () => {
 	await symlink(outside, join(dir, "probabilidad/materials/afuera"));
 	await mkdir(join(dir, ".claude"), { recursive: true });
 	await writeFile(join(dir, ".claude", "settings.json"), "{}");
+	await symlink(
+		join(dir, ".claude", "settings.json"),
+		join(dir, "probabilidad/materials/oculto.txt"),
+	);
 
 	const refused = [
 		"/files/probabilidad/materials/link.pdf",
@@ -78,6 +82,8 @@ test("/files/* never leaves the study folder", async () => {
 		"/files/probabilidad/materials/..%2F..%2F..%2Fsecret.pdf",
 		`/files/${encodeURIComponent(join(outside, "secret.pdf"))}`,
 		"/files/.claude/settings.json",
+		"/files/probabilidad/materials/oculto.txt",
+		"/files/probabilidad/materials/apunte%201.pdf%00.txt",
 		"/files/probabilidad/materials",
 		"/files/probabilidad/materials/nada.pdf",
 	];

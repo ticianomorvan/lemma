@@ -11,7 +11,12 @@ import { z } from "zod";
 export const CALC_TOOL = "mcp__study__calc";
 
 export const Anchor = z.object({
-	path: z.string().min(1).max(1024),
+	/** Relative to the study root; one line, so it can't break the transcript. */
+	path: z
+		.string()
+		.min(1)
+		.max(1024)
+		.regex(/^[^\r\n]+$/),
 	page: z.number().int().positive(),
 	text: z.string().max(10_000),
 });

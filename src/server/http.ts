@@ -466,12 +466,12 @@ async function serveFile(req: Request, folder: Folder) {
 	} catch {
 		return notFound();
 	}
-	const parts = path.split("/");
-	if (parts.some((p) => p === "" || p.startsWith(".") || p.includes("\\"))) {
-		return notFound();
-	}
+	const hidden = (p: string) =>
+		p.split("/").some((x) => x === "" || x.startsWith("."));
+	if (hidden(path) || /[\\\0]/.test(path)) return notFound();
 	const real = folder.resolve(path);
-	if (!real) return notFound();
+	// A link inside the folder that points into a hidden one is refused too.
+	if (!real || hidden(folder.relative(real))) return notFound();
 	const file = Bun.file(real);
 	let size: number;
 	try {
