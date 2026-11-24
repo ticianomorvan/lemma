@@ -1,6 +1,5 @@
 node_modules/
 dist/
-dist-prototype/
 .DS_Store
 *.log
 test-results/

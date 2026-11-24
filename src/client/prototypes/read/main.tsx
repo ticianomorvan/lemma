@@ -1,9 +1,9 @@
 /**
  * The Read view prototype (step 7): the real thread, theme and blocks over a
  * fixture page and session, in the design chosen for step 8 (docs/architecture.md
- * → Views). Dev only: `bun run dev:client`, then /prototypes/read.html;
- * `bun run preview:prototype` serves a built copy. The production build leaves
- * it out (vite.prototype.config.ts, e2e/app.pw.ts). `?theme=light|dark` sets the theme.
+ * → Views). Dev only: `bun run dev:client`, then /prototypes/read.html. The
+ * production build leaves it out (e2e/app.pw.ts checks), and step 8 deletes it
+ * once its views are in the app. `?theme=light|dark` sets the theme.
  */
 import "../../globals.css";
 import "./read.css";

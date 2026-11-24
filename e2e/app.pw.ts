@@ -14,7 +14,7 @@ test("the production build opens a session at its own URL", async ({
 test("the production build leaves out the design prototypes", async ({
 	request,
 }) => {
-	// Dev only (vite.prototype.config.ts): the build has no prototype page and no bundle of it.
+	// Dev only: vite.config.ts builds only index.html and the blocks fixture, so the build has no prototype page and no bundle of it.
 	const page = await request.get("/prototypes/read.html");
 	expect(page.status()).toBe(404);
 	const shell = await (await request.get("/prototypes/read")).text();

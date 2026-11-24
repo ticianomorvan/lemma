@@ -16,11 +16,5 @@
 		"skipLibCheck": true,
 		"types": ["bun", "vite/client"]
 	},
-	"include": [
-		"src",
-		"e2e",
-		"playwright.config.ts",
-		"vite.config.ts",
-		"vite.prototype.config.ts"
-	]
+	"include": ["src", "e2e", "playwright.config.ts", "vite.config.ts"]
 }
