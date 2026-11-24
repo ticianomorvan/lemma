@@ -6,13 +6,15 @@
  * It fills whatever box it is given, so the same view can later sit in the
  * Read view's chat panel (step 8) and become the Practice notebook (step 9).
  */
-import { ArrowDown, ArrowUp, Square } from "lucide-react";
-import { useRef } from "react";
+import { ArrowDown, ArrowUp, FileText, Square } from "lucide-react";
+import { type ReactNode, useRef } from "react";
 import { cn } from "#lib/utils.ts";
+import type { Anchor } from "../../shared/protocol.ts";
 import { Markdown } from "../markdown/lazy.tsx";
 import type { SessionState } from "../store.ts";
 import { useComposer, useStickToBottom, useStopOnEscape } from "./hooks.ts";
 import {
+	basename,
 	cellId,
 	isRunning,
 	itemKey,
@@ -33,9 +35,15 @@ const STATUS: Record<string, string> = {
 export function Thread({
 	state,
 	actions,
+	onCite,
+	composerTop,
 }: {
 	state: SessionState;
 	actions: ThreadActions;
+	/** Opens an anchored question's passage; without it the citation is plain text. */
+	onCite?: (anchor: Anchor) => void;
+	/** Shown above the composer's text, such as the passage a question will quote. */
+	composerTop?: ReactNode;
 }) {
 	const running = isRunning(state.view);
 	const items = threadItems(state);
@@ -59,7 +67,7 @@ export function Thread({
 		<div className="relative grid h-full min-h-0 grid-rows-[1fr_auto] bg-paper">
 			<div
 				ref={scroller}
-				className="min-h-0 overflow-y-auto [scrollbar-gutter:stable]"
+				className="@container min-h-0 overflow-y-auto [scrollbar-gutter:stable]"
 			>
 				<IndexRail turns={turns} active={active} scroller={scroller} />
 				<div
@@ -73,6 +81,7 @@ export function Thread({
 							item={item}
 							first={i === 0}
 							onRetry={actions.send}
+							onCite={onCite}
 							onEdit={(id) => composer.restore(actions.discard(id))}
 						/>
 					))}
@@ -104,6 +113,11 @@ export function Thread({
 						</button>
 					)}
 				</div>
+				{composerTop && (
+					<div className="mx-auto max-w-[720px] px-4 pt-3 sm:px-8">
+						{composerTop}
+					</div>
+				)}
 				<form
 					className="mx-auto flex max-w-[720px] items-end gap-2 px-4 py-3 sm:px-8"
 					onSubmit={(e) => {
@@ -159,11 +173,13 @@ function Cell({
 	first,
 	onRetry,
 	onEdit,
+	onCite,
 }: {
 	item: ThreadItem;
 	first: boolean;
 	onRetry: (text: string) => void;
 	onEdit: (clientMsgId: string) => void;
+	onCite?: (anchor: Anchor) => void;
 }) {
 	const divider = first ? "" : "border-t";
 	if (item.kind !== "turn") {
@@ -211,6 +227,8 @@ function Cell({
 		>
 			<Question
 				text={turn.user.text}
+				anchor={turn.user.anchor}
+				onCite={onCite}
 				label={STATUS[state] ?? ""}
 				tone={
 					state === "error" ? "error" : state === "streaming" ? "live" : "muted"
@@ -260,11 +278,15 @@ function Question({
 	label,
 	tone,
 	pending = false,
+	anchor,
+	onCite,
 }: {
 	text: string;
 	label: string;
 	tone: "muted" | "live" | "error";
 	pending?: boolean;
+	anchor?: Anchor;
+	onCite?: (anchor: Anchor) => void;
 }) {
 	return (
 		<div
@@ -289,6 +311,7 @@ function Question({
 					</>
 				)}
 			</div>
+			{anchor && <Citation anchor={anchor} onCite={onCite} />}
 			<div
 				className={cn(
 					"answer question text-[15px] font-medium",
@@ -298,5 +321,43 @@ function Question({
 				<Markdown text={text} question />
 			</div>
 		</div>
+	);
+}
+
+/**
+ * The passage an anchored question quotes: the file and page, then the quote.
+ * With `onCite` the whole citation is a button that opens the page there.
+ */
+export function Citation({
+	anchor,
+	onCite,
+}: {
+	anchor: Anchor;
+	onCite?: (anchor: Anchor) => void;
+}) {
+	const body = (
+		<>
+			<span className="flex items-center gap-1.5 text-[12px] text-primary">
+				<FileText aria-hidden className="size-3.5 shrink-0" />
+				<span className="truncate">
+					{basename(anchor.path)} · p. {anchor.page}
+				</span>
+			</span>
+			<span className="mt-0.5 line-clamp-2 border-l-2 border-highlight pl-2 font-heading text-[14px] text-muted-foreground italic">
+				{snippet(anchor.text)}
+			</span>
+		</>
+	);
+	return onCite ? (
+		<button
+			type="button"
+			onClick={() => onCite(anchor)}
+			aria-label={`Abrir ${basename(anchor.path)} en la página ${anchor.page}`}
+			className="-mx-1.5 mb-2 grid w-[calc(100%+0.75rem)] rounded-md px-1.5 py-1 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-secondary active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-ring"
+		>
+			{body}
+		</button>
+	) : (
+		<div className="mb-2 grid py-1">{body}</div>
 	);
 }

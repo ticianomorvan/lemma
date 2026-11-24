@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { type Block, CALC_TOOL as CALC } from "../../shared/protocol.ts";
-import { toolLabel } from "./model.ts";
+import { snippet, toolLabel } from "./model.ts";
 
 const tool = (name: string, text: string, done: boolean): Block => ({
 	id: "m:0",
@@ -29,4 +29,12 @@ test("a calc row names the expression's first line, partial input included", () 
 	expect(toolLabel(tool("Read", '{"file_path":"/a/notas.md"}', true))).toBe(
 		"Leyó notas.md",
 	);
+});
+
+test("snippet drops emphasis marks but keeps a lone asterisk", () => {
+	expect(snippet("¿Por qué queda *descartada*? **Ojo**")).toBe(
+		"¿Por qué queda descartada? Ojo",
+	);
+	expect(snippet("what is $f * g$?")).toBe("what is f * g?");
+	expect(snippet("is $a^*$ closed?")).toBe("is a^* closed?");
 });

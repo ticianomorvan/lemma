@@ -102,7 +102,7 @@ function decodePartial(raw: string): string {
 	}
 }
 
-const basename = (path: string) => path.split("/").pop() ?? path;
+export const basename = (path: string) => path.split("/").pop() ?? path;
 
 /** A multi-line `calc` expression shows its first line, then "…". */
 function firstLine(expr: string): string {
@@ -110,11 +110,12 @@ function firstLine(expr: string): string {
 	return rest.length > 0 ? `${first.trim()} …` : first.trim();
 }
 
-/** One line of plain text: no HTML comments, math delimiters or extra spaces. */
+/** One line of plain text: no HTML comments, math delimiters, emphasis marks or extra spaces. */
 export const snippet = (text: string) =>
 	text
 		.replace(/<!--[\s\S]*?-->/g, "")
 		.replace(/\$+|\\[()[\]]/g, "")
+		.replace(/(\*\*?)(?=\S)(.+?)(?<=\S)\1/g, "$2")
 		.replace(/\s+/g, " ")
 		.trim();
 

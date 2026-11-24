@@ -110,10 +110,12 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
   - A 10-prompt live check from both courses renders every block. It includes the even-0s DFA, a natural-deduction proof and a shaded normal density.
 
 ### 7. Combined Read view prototype (design only)
-- **What:** add a fourth variant to `prototype/workspace.html`: Read with margin cards ↔ chat panel with pins, and the switch to Practice. Pick the details before step 8.
-- **Proof:** the variant is reviewed in a browser at three widths, and you approve it.
+- **What:** a dev-only route in the app, `/prototypes/read.html` (`src/client/prototypes/read/`), fed by fixture pages and a recorded thread: Read with margin cards ↔ chat panel with pins, and the switch to Practice. It uses the real thread, theme tokens and diagram blocks, so step 8 builds from it. `prototype/workspace.html` stays as the historical reference.
+- **Proof:** the chosen variant is reviewed in a browser at three widths, and you approve it. The production build doesn't serve the route (`e2e/app.pw.ts`).
 
 ### 8. Read view
+- **Start from** the step 7 route (`src/client/prototypes/read/`) and the design it settled (`architecture.md` → Views): move its views into the app, swap the fixture pages for react-pdf and the fake session for the store, then delete the route.
+- **Carry over:** keep the shadcn `sheet`, `tabs` and `tooltip` components the route added (Read and Practice use them). Take the 640 / 1024 px breakpoints from one shared `useLayout()` instead of separate media queries and `sm:`/`lg:` classes. Move the `[data-passage]` and `[data-page]` lookups in `items.ts` next to the page renderer, since react-pdf replaces it. Size the pin bars from the rects the margin layout already measures, and drop selection highlights whose turn or note is gone.
 - **What:** a PDF pane (`react-pdf`, with its text layer and `/files/*` Range support), and select → Ask or Note.
 - **Behavior:** `anchor` on messages and the `notes` route; margin cards for the visible page; the chat panel with pins.
 - **Proof:**

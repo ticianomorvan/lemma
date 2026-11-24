@@ -1,8 +1,9 @@
 /**
- * The thread's index: one entry per question, to jump between them. On wide
- * screens it sits in the margin beside the notebook as a column of ticks
- * that open into the questions on hover; on narrow ones it is a button that
- * opens the same list in a popover.
+ * The thread's index: one entry per question, to jump between them. When the
+ * thread is wide it sits in the margin beside the notebook as a column of
+ * ticks that open into the questions on hover; when narrow it is a button
+ * that opens the same list in a popover. "Wide" is the thread's own width (a
+ * container query), so the index also fits the Read view's chat panel.
  */
 import { ListOrdered } from "lucide-react";
 import { type RefObject, useEffect, useState } from "react";
@@ -100,7 +101,7 @@ export function IndexRail({
 			{/* Wide screens: ticks in the right margin that open on hover or focus. */}
 			<nav
 				aria-label="Índice de preguntas"
-				className="group/index pointer-events-auto absolute top-6 right-3 hidden max-h-[calc(100dvh-14rem)] w-56 overflow-x-hidden overflow-y-auto min-[1200px]:block"
+				className="group/index pointer-events-auto absolute top-6 right-3 hidden max-h-[calc(100dvh-14rem)] w-56 overflow-x-hidden overflow-y-auto @min-[1200px]:block"
 			>
 				<ol className="grid grid-cols-1 gap-0.5">
 					{entries.map((e) => {
@@ -139,7 +140,7 @@ export function IndexRail({
 			</nav>
 
 			{/* Narrow screens: a button that opens the list. */}
-			<div className="pointer-events-auto absolute top-3 right-3 min-[1200px]:hidden">
+			<div className="pointer-events-auto absolute top-3 right-3 @min-[1200px]:hidden">
 				<Popover open={open} onOpenChange={setOpen}>
 					<PopoverTrigger
 						aria-label="Índice de preguntas"
