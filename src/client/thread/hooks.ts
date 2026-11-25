@@ -12,12 +12,18 @@ import type { ThreadActions } from "./model.ts";
 const coarse = () =>
 	typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 
+/** A composer's text, kept outside it so it outlives the composer. */
+export type ComposerDraft = { text: string; setText: (text: string) => void };
+
 /**
  * Composer state and keys: Enter sends (a newline on touch screens) and
  * Shift+Enter is a newline. Sending while Claude answers queues the message.
+ * The text lives in `draft`, so a session's views share it.
  */
-export function useComposer(actions: Pick<ThreadActions, "send">) {
-	const [text, setText] = useState("");
+export function useComposer(
+	actions: Pick<ThreadActions, "send">,
+	{ text, setText }: ComposerDraft,
+) {
 	const ref = useRef<HTMLTextAreaElement>(null);
 	const canSend = text.trim().length > 0;
 	const submit = useCallback(() => {
@@ -25,7 +31,7 @@ export function useComposer(actions: Pick<ThreadActions, "send">) {
 		actions.send(text.trim());
 		setText("");
 		ref.current?.focus();
-	}, [text, actions]);
+	}, [text, actions, setText]);
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.nativeEvent.isComposing) return;
 		if (e.key === "Enter" && !e.shiftKey && !coarse()) {
@@ -60,22 +66,62 @@ export function useStopOnEscape(running: boolean, stop: () => void) {
 // ── Scrolling ────────────────────────────────────────────────────────────────
 
 /**
+ * Where a reader left a thread: at the bottom, or with a cell's top `offset`
+ * px below the view's top. Kept by cell rather than pixels, so answers that
+ * draw at a different height on the way back don't move the reader.
+ */
+export type ThreadPlace = { cell?: string; offset: number };
+
+/**
  * Keeps a scroll container pinned to the bottom while content grows, as long
  * as the reader is already there. Scrolling up releases it.
+ *
+ * With `memory`, the reader's place is written there as they scroll and the
+ * next mount opens at it instead of at the bottom.
  */
 export function useStickToBottom(
 	scroller: RefObject<HTMLElement | null>,
 	content: RefObject<HTMLElement | null>,
+	memory?: { current?: ThreadPlace },
 ) {
-	const [atBottom, setAtBottom] = useState(true);
+	const [atBottom, setAtBottom] = useState(() => !memory?.current?.cell);
 	const pinned = useRef(true);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `memory` is read once, at mount
 	useLayoutEffect(() => {
 		const el = scroller.current;
 		const inner = content.current;
 		if (!el || !inner) return;
-		el.scrollTop = el.scrollHeight;
+		const cell = memory?.current?.cell;
+		const target = cell ? document.getElementById(cell) : null;
+		const offset = memory?.current?.offset ?? 0;
+		/** The restored cell, held at its offset while answers above it finish drawing, until the reader moves. */
+		let held = target && el.contains(target) ? target : null;
+		const hold = () => {
+			if (!held) return;
+			el.scrollTop +=
+				held.getBoundingClientRect().top -
+				el.getBoundingClientRect().top -
+				offset;
+		};
+		const release = () => {
+			held = null;
+		};
+		if (held) {
+			hold();
+			pinned.current = false;
+		} else {
+			el.scrollTop = el.scrollHeight;
+			setAtBottom(true);
+		}
+		const moves = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+		for (const m of moves) el.addEventListener(m, release, { passive: true });
 		let last = el.scrollTop;
+		let frame = 0;
+		const remember = () => {
+			frame = 0;
+			if (memory) memory.current = placeIn(el, pinned.current);
+		};
 		const onScroll = () => {
 			const near = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
 			// Only the reader scrolling up releases the pin; a smooth scroll
@@ -84,15 +130,19 @@ export function useStickToBottom(
 			else if (el.scrollTop < last) pinned.current = false;
 			last = el.scrollTop;
 			setAtBottom(near);
+			frame ||= requestAnimationFrame(remember);
 		};
 		const observer = new ResizeObserver(() => {
 			if (pinned.current) el.scrollTop = el.scrollHeight;
+			else hold();
 		});
 		observer.observe(inner);
 		el.addEventListener("scroll", onScroll, { passive: true });
 		return () => {
 			observer.disconnect();
 			el.removeEventListener("scroll", onScroll);
+			for (const m of moves) el.removeEventListener(m, release);
+			cancelAnimationFrame(frame);
 		};
 	}, [scroller, content]);
 
@@ -104,4 +154,15 @@ export function useStickToBottom(
 	}, [scroller]);
 
 	return { atBottom, scrollToBottom, pin: () => (pinned.current = true) };
+}
+
+/** The first cell whose bottom is in view, and how far its top sits below the view's top. */
+function placeIn(el: HTMLElement, pinned: boolean): ThreadPlace {
+	if (pinned) return { offset: 0 };
+	const top = el.getBoundingClientRect().top;
+	for (const cell of el.querySelectorAll<HTMLElement>("section[id]")) {
+		const box = cell.getBoundingClientRect();
+		if (box.bottom > top) return { cell: cell.id, offset: box.top - top };
+	}
+	return { offset: 0 };
 }

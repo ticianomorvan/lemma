@@ -4,6 +4,7 @@
  */
 import type { Anchor, Note, SessionView, Turn } from "../../shared/protocol.ts";
 import { passageKey } from "./anchors.ts";
+import type { Mark } from "./pdf-pages.tsx";
 
 export type Item =
 	| {
@@ -52,6 +53,15 @@ export function groups(items: Item[]): Group[] {
 		map.set(key, group);
 	}
 	return [...map.values()];
+}
+
+/** The passages to paint: filled when any question quotes them, else underlined. */
+export function marksOf(groups: Group[]): Mark[] {
+	return groups.map((g) => ({
+		key: g.key,
+		anchor: g.anchor,
+		kind: g.items.some((i) => i.kind === "turn") ? "question" : "note",
+	}));
 }
 
 /** The first text block's first paragraph: a card's preview. */

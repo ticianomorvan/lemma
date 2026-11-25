@@ -38,10 +38,13 @@ export function ViewSwitch({
 	view,
 	onView,
 	layout,
+	noPdfsIn,
 }: {
 	view?: View;
 	onView: (view: View) => void;
 	layout: Layout;
+	/** The course, when it has no PDFs: Read is off, and its tip says where to put them. */
+	noPdfsIn?: string;
 }) {
 	const mod = isMac() ? "⌥" : "Alt+";
 	const iconOnly = layout === "phone";
@@ -51,9 +54,11 @@ export function ViewSwitch({
 		Icon: typeof BookOpen,
 		key: string,
 	) => {
+		const off = value === "read" && noPdfsIn !== undefined;
 		const trigger = (
 			<TabsTrigger
 				value={value}
+				disabled={off}
 				aria-label={iconOnly ? label : undefined}
 				// Instant: the control changes state, it doesn't travel.
 				className={cn(
@@ -65,17 +70,34 @@ export function ViewSwitch({
 				{!iconOnly && label}
 			</TabsTrigger>
 		);
-		return iconOnly ? (
+		return iconOnly && !off ? (
 			<span key={value}>{trigger}</span>
 		) : (
 			<Tooltip key={value}>
-				<TooltipTrigger render={<span />}>{trigger}</TooltipTrigger>
-				<TooltipContent>
-					{label}
-					<kbd className="rounded bg-background/15 px-1 font-sans">
-						{mod}
-						{key}
-					</kbd>
+				{/* A disabled tab takes no pointer events, so its wrapper shows the tip. */}
+				<TooltipTrigger
+					render={<span className="[&_button:disabled]:pointer-events-none" />}
+				>
+					{trigger}
+				</TooltipTrigger>
+				<TooltipContent className={cn(off && "max-w-64 flex-col items-start")}>
+					{off ? (
+						<>
+							<span className="font-medium">Este curso no tiene apuntes</span>
+							<span className="opacity-80">
+								Copiá los PDFs del curso a {noPdfsIn}/materials/, en la carpeta
+								de estudio.
+							</span>
+						</>
+					) : (
+						<>
+							{label}
+							<kbd className="rounded bg-background/15 px-1 font-sans">
+								{mod}
+								{key}
+							</kbd>
+						</>
+					)}
 				</TooltipContent>
 			</Tooltip>
 		);

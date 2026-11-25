@@ -156,10 +156,13 @@ export function paint(groups: {
 	set("lemma-active", groups.active);
 }
 
-/** Scrolls an anchor's page, or its passage once drawn, into view and flashes it. */
-export function revealAnchor(anchor: Anchor) {
+/**
+ * Scrolls an anchor's page, or its passage once drawn, into view and flashes
+ * it. `instant` jumps instead of gliding, for a view that has just opened.
+ */
+export function revealAnchor(anchor: Anchor, { instant = false } = {}) {
 	const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-	const behavior = reduce ? "auto" : "smooth";
+	const behavior = reduce || instant ? "instant" : "smooth";
 	const range = anchorRange(anchor);
 	const page = document.querySelector<HTMLElement>(pageSelector(anchor.page));
 	if (!range) {
@@ -180,6 +183,42 @@ export function revealAnchor(anchor: Anchor) {
 		});
 	}
 	flash(range);
+}
+
+// ── Places ───────────────────────────────────────────────────────────────────
+
+/**
+ * Where a reader is in the pages: the page at the top of the scroller's view
+ * and how far into it, as a fraction of its height. A fraction rather than
+ * pixels, so a place holds at another width (Read's page and a drawer's).
+ */
+export type PagePlace = { page: number; into: number };
+
+/** The place the pages under `scroller` are scrolled to. */
+export function placeOf(scroller: Element): PagePlace | undefined {
+	const top = scroller.getBoundingClientRect().top;
+	for (const page of scroller.querySelectorAll<HTMLElement>(
+		`${ROOT} [data-page]`,
+	)) {
+		const box = page.getBoundingClientRect();
+		if (box.bottom > top && box.height > 0) {
+			return {
+				page: Number(page.dataset.page),
+				into: Math.max(0, (top - box.top) / box.height),
+			};
+		}
+	}
+	return undefined;
+}
+
+/** Scrolls the pages under `scroller` back to a place; false if that page isn't there yet. */
+export function restorePlace(scroller: Element, place: PagePlace) {
+	const page = scroller.querySelector(pageSelector(place.page));
+	if (!page) return false;
+	const box = page.getBoundingClientRect();
+	scroller.scrollTop +=
+		box.top - scroller.getBoundingClientRect().top + place.into * box.height;
+	return true;
 }
 
 let flashTimer: ReturnType<typeof setTimeout> | undefined;

@@ -15,12 +15,14 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 } from "react";
 import { TooltipProvider } from "#components/ui/tooltip.tsx";
 import { cn } from "#lib/utils.ts";
 import { APP_NAME } from "../shared/app.ts";
 import type {
+	Anchor,
 	CreateSessionResponse,
 	MaterialsResponse,
 	SessionMeta,
@@ -31,11 +33,13 @@ import { DevicesMenu } from "./devices-menu.tsx";
 import { FolderSetup } from "./folder-setup.tsx";
 import { type Layout, useLayout } from "./layout.ts";
 import { isPairingPath, PairingScreen } from "./pairing.tsx";
-import type { Material } from "./read/read-view.tsx";
+import { PracticeView } from "./practice/practice-view.tsx";
+import type { PagePlace } from "./read/anchors.ts";
+import type { Material, ReadMemory } from "./read/read-view.tsx";
 import { SessionsMenu } from "./sessions-menu.tsx";
 import { SessionStore, useSession } from "./store.ts";
+import type { ThreadPlace } from "./thread/hooks.ts";
 import type { ThreadActions } from "./thread/model.ts";
-import { Thread } from "./thread/thread.tsx";
 import { isUnpaired } from "./unpaired.ts";
 import { useViewKeys, type View, ViewSwitch } from "./view-switch.tsx";
 
@@ -73,11 +77,24 @@ export function ChatApp() {
 		setChosenView(next);
 		save("lemma:view", next);
 	}, []);
-	useViewKeys(chooseView);
 	const files = useMaterials(meta && meta.id === id ? meta.course : undefined);
-	// Until this client picks one: Read when the course has PDFs to read.
-	const view: View | undefined =
-		chosenView ?? (files && (files.length > 0 ? "read" : "practice"));
+	// A course with no PDFs has nothing to read: it stays in Practice. Until
+	// this client picks a view, a course with PDFs opens in Read.
+	const readable = files === undefined || files.length > 0;
+	const view: View | undefined = readable
+		? (chosenView ?? (files && "read"))
+		: "practice";
+	/** Set by the open session: what it carries into Read when the view switches there. */
+	const toRead = useRef<() => void>(undefined);
+	const pickView = useCallback(
+		(next: View) => {
+			if (next === "read" && !readable) return;
+			if (next === "read") toRead.current?.();
+			chooseView(next);
+		},
+		[readable, chooseView],
+	);
+	useViewKeys(pickView);
 	const retry = useCallback(() => {
 		setScreen("app");
 		setAttempt((n) => n + 1);
@@ -159,7 +176,14 @@ export function ChatApp() {
 						onOpen={(next) => open(next, setId, "push")}
 						onCreate={start}
 					/>
-					{id && <ViewSwitch view={view} onView={chooseView} layout={layout} />}
+					{id && (
+						<ViewSwitch
+							view={view}
+							onView={pickView}
+							layout={layout}
+							noPdfsIn={readable ? undefined : (meta?.course ?? "")}
+						/>
+					)}
 					<span className="flex-1" />
 					<DevicesMenu onUnpaired={unpair} />
 					<button
@@ -182,6 +206,8 @@ export function ChatApp() {
 							onUnpaired={unpair}
 							onMeta={setMeta}
 							view={view}
+							onView={pickView}
+							toRead={toRead}
 							files={files}
 							layout={layout}
 						/>
@@ -209,6 +235,8 @@ type SessionProps = {
 	onMeta: (meta: SessionMeta) => void;
 	/** Undefined until the course's materials are known. */
 	view?: View;
+	onView: (view: View) => void;
+	toRead: { current?: () => void };
 	/** Undefined until the server lists them. */
 	files?: Material[];
 	layout: Layout;
@@ -232,6 +260,8 @@ function Live({
 	onUnpaired,
 	onMeta,
 	view,
+	onView,
+	toRead,
 	files,
 	layout,
 }: SessionProps & { store: SessionStore }) {
@@ -267,11 +297,48 @@ function Live({
 		},
 		[store.id],
 	);
+
+	// What survives switching views (the session's views share one thread;
+	// each keeps its own scroll): the composer's text, Practice's scroll,
+	// and Read's file, scroll and chat.
+	const [text, setText] = useState("");
+	const draft = useMemo(() => ({ text, setText }), [text]);
+	const practicePlace = useRef<ThreadPlace>(undefined);
+	const readMemory = useRef<ReadMemory>(undefined);
+
+	// Practice's open citation. Switching to Read with it open opens Read on
+	// that file, where the drawer was scrolled; the drawer doesn't come back.
+	const [cited, setCited] = useState<Anchor>();
+	const drawerPlace = useRef<PagePlace>(undefined);
+	const cite = useCallback((anchor: Anchor | undefined) => {
+		drawerPlace.current = anchor && { page: anchor.page, into: 0 };
+		setCited(anchor);
+	}, []);
+	const has = (path?: string) =>
+		!!path && !!files?.some((f) => f.path === path);
 	const file = files && openFile(files, chosenFile, state.view);
+	// Runs in the switch's own event, so Read mounts with it in one render.
+	useEffect(() => {
+		toRead.current = () => {
+			if (!cited) return;
+			if (has(cited.path)) {
+				chooseFile(cited.path);
+				readMemory.current = {
+					file: cited.path,
+					place: drawerPlace.current,
+					chat: false,
+				};
+			}
+			setCited(undefined);
+		};
+		return () => {
+			toRead.current = undefined;
+		};
+	});
 
 	return (
 		<div className="relative h-full">
-			{view === "read" && files ? (
+			{view === "read" && file && files ? (
 				<Suspense fallback={null}>
 					<ReadView
 						store={store}
@@ -280,11 +347,25 @@ function Live({
 						file={file}
 						onFile={chooseFile}
 						layout={layout}
-						course={state.view?.meta.course ?? ""}
+						memory={readMemory}
+						draft={draft}
 					/>
 				</Suspense>
 			) : view === "practice" ? (
-				<Thread state={state} actions={actions} />
+				<PracticeView
+					state={state}
+					actions={actions}
+					layout={layout}
+					draft={draft}
+					place={practicePlace}
+					cited={cited}
+					onCite={cite}
+					onDrawerPlace={(place) => {
+						drawerPlace.current = place;
+					}}
+					canRead={has}
+					onRead={() => onView("read")}
+				/>
 			) : null}
 			{state.connection === "offline" && (
 				<div

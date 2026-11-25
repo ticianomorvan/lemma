@@ -3,16 +3,22 @@
  * set apart as a card and the answer as full-width serif. The composer is
  * docked to the bottom edge, and stop floats above it while Claude answers.
  *
- * It fills whatever box it is given, so the same view can later sit in the
- * Read view's chat panel (step 8) and become the Practice notebook (step 9).
+ * It fills whatever box it is given: the Practice notebook and the Read
+ * view's chat panel are both this thread.
  */
 import { ArrowDown, ArrowUp, FileText, Square } from "lucide-react";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { cn } from "#lib/utils.ts";
 import type { Anchor } from "../../shared/protocol.ts";
 import { Markdown } from "../markdown/lazy.tsx";
 import type { SessionState } from "../store.ts";
-import { useComposer, useStickToBottom, useStopOnEscape } from "./hooks.ts";
+import {
+	type ComposerDraft,
+	type ThreadPlace,
+	useComposer,
+	useStickToBottom,
+	useStopOnEscape,
+} from "./hooks.ts";
 import {
 	basename,
 	cellId,
@@ -37,6 +43,8 @@ export function Thread({
 	actions,
 	onCite,
 	composerTop,
+	draft,
+	place,
 }: {
 	state: SessionState;
 	actions: ThreadActions;
@@ -44,18 +52,32 @@ export function Thread({
 	onCite?: (anchor: Anchor) => void;
 	/** Shown above the composer's text, such as the passage a question will quote. */
 	composerTop?: ReactNode;
+	/** The composer's text, kept by the session so it outlives this thread (switching views). */
+	draft: ComposerDraft;
+	/** Where the reader was, kept across mounts; without it the thread opens at the bottom. */
+	place?: { current?: ThreadPlace };
 }) {
 	const running = isRunning(state.view);
 	const items = threadItems(state);
+	// Rows already there when the thread mounts appear at once; only new ones
+	// animate in, so opening the thread (or switching to it) is instant.
+	const [present] = useState(() => new Set(items.map(itemKey)));
 	const scroller = useRef<HTMLDivElement>(null);
 	const content = useRef<HTMLDivElement>(null);
-	const { atBottom, scrollToBottom, pin } = useStickToBottom(scroller, content);
-	const composer = useComposer({
-		send: (text) => {
-			pin();
-			actions.send(text);
+	const { atBottom, scrollToBottom, pin } = useStickToBottom(
+		scroller,
+		content,
+		place,
+	);
+	const composer = useComposer(
+		{
+			send: (text) => {
+				pin();
+				actions.send(text);
+			},
 		},
-	});
+		draft,
+	);
 	useStopOnEscape(running, actions.stop);
 	const turns = items.filter((i) => i.kind === "turn");
 	const active = useActiveCell(
@@ -80,6 +102,7 @@ export function Thread({
 							key={itemKey(item)}
 							item={item}
 							first={i === 0}
+							animate={!present.has(itemKey(item))}
 							onRetry={actions.send}
 							onCite={onCite}
 							onEdit={(id) => composer.restore(actions.discard(id))}
@@ -171,12 +194,14 @@ function Empty() {
 function Cell({
 	item,
 	first,
+	animate,
 	onRetry,
 	onEdit,
 	onCite,
 }: {
 	item: ThreadItem;
 	first: boolean;
+	animate: boolean;
 	onRetry: (text: string) => void;
 	onEdit: (clientMsgId: string) => void;
 	onCite?: (anchor: Anchor) => void;
@@ -191,7 +216,9 @@ function Cell({
 				? `En cola${item.position > 1 ? ` · ${item.position}º` : ""}`
 				: "Enviando";
 		return (
-			<section className={cn("turn-in border-dashed py-6", divider)}>
+			<section
+				className={cn("border-dashed py-6", animate && "turn-in", divider)}
+			>
 				<Question
 					text={text}
 					label={label}
@@ -220,7 +247,8 @@ function Cell({
 			tabIndex={-1}
 			aria-label={`Pregunta: ${snippet(turn.user.text).slice(0, 80)}`}
 			className={cn(
-				"turn-in scroll-mt-4 py-6 outline-none",
+				"scroll-mt-4 py-6 outline-none",
+				animate && "turn-in",
 				divider,
 				first && "pt-0",
 			)}
