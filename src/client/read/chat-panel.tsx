@@ -7,6 +7,7 @@ import { useEffect, useMemo } from "react";
 import { cn } from "#lib/utils.ts";
 import type { Anchor } from "../../shared/protocol.ts";
 import type { SessionState, SessionStore } from "../store.ts";
+import type { ComposerDraft } from "../thread/hooks.ts";
 import { cellId, type ThreadActions } from "../thread/model.ts";
 import { Citation, Thread } from "../thread/thread.tsx";
 import { revealAnchor } from "./anchors.ts";
@@ -20,6 +21,7 @@ export function ChatPanel({
 	target,
 	onClose,
 	closeIcon = "panel",
+	draft,
 }: {
 	store: SessionStore;
 	state: SessionState;
@@ -30,6 +32,8 @@ export function ChatPanel({
 	onClose: () => void;
 	/** `panel` where it sits beside the page, `x` where it covers it. */
 	closeIcon?: "panel" | "x";
+	/** The composer's text, shared with Practice. */
+	draft?: ComposerDraft;
 }) {
 	const actions = useMemo<ThreadActions>(
 		() => ({
@@ -98,6 +102,7 @@ export function ChatPanel({
 				state={state}
 				actions={actions}
 				onCite={revealAnchor}
+				draft={draft}
 				composerTop={
 					pending && (
 						<div className="flex items-start gap-1 rounded-lg bg-secondary px-2 pt-1">

@@ -14,18 +14,25 @@
  * `read-phone.tsx` lay it out.
  */
 import "./read.css";
-import { FileText } from "lucide-react";
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
+import {
+	lazy,
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import type { Anchor, MaterialsResponse } from "../../shared/protocol.ts";
 import type { Layout } from "../layout.ts";
 import type { SessionState, SessionStore } from "../store.ts";
+import type { ComposerDraft } from "../thread/hooks.ts";
 import { basename } from "../thread/model.ts";
-import { anchorRange } from "./anchors.ts";
+import { anchorRange, type PagePlace } from "./anchors.ts";
 import { ChatPanel } from "./chat-panel.tsx";
 import { FileMenu } from "./file-menu.tsx";
-import { groups as groupsOf, marginItems } from "./items.ts";
+import { groups as groupsOf, marginItems, marksOf } from "./items.ts";
 import type { Draft } from "./margin.tsx";
-import type { Mark } from "./pdf-pages.tsx";
 import { PhoneRead, stripId } from "./read-phone.tsx";
 import { WideRead } from "./read-wide.tsx";
 import { SelectionActions } from "./selection.tsx";
@@ -34,53 +41,30 @@ const PdfPages = lazy(() => import("./pdf-pages.tsx"));
 
 export type Material = MaterialsResponse["files"][number];
 
-export function ReadView({
-	store,
-	state,
-	files,
-	file,
-	onFile,
-	layout,
-	course,
-}: {
+/**
+ * What Read keeps when the session switches to Practice and back: the file,
+ * where its pages were scrolled, and whether the chat was open.
+ */
+export type ReadMemory = { file: string; place?: PagePlace; chat: boolean };
+
+export type ReadProps = {
 	store: SessionStore;
 	state: SessionState;
 	files: Material[];
-	/** The open file's path, or undefined when the course has none. */
-	file?: string;
+	/** The open file's path. */
+	file: string;
 	onFile: (path: string) => void;
 	layout: Layout;
-	course: string;
-}) {
-	if (!file) return <NoMaterials course={course} />;
-	return (
-		<Read
-			// A new file starts with a fresh page, scroll and drafts.
-			key={file}
-			store={store}
-			state={state}
-			files={files}
-			file={file}
-			onFile={onFile}
-			layout={layout}
-		/>
-	);
-}
+	/** Read's place, kept across switches: it opens there when the file matches. */
+	memory: { current?: ReadMemory };
+	/** The composer's text, shared with Practice. */
+	draft: ComposerDraft;
+};
 
-function NoMaterials({ course }: { course: string }) {
-	return (
-		<div className="grid h-full place-content-center justify-items-center gap-2 px-6 text-center">
-			<FileText aria-hidden className="size-6 text-subtle" />
-			<p className="font-heading text-xl">No hay apuntes para leer</p>
-			<p className="max-w-[46ch] text-sm text-muted-foreground">
-				Copiá los PDFs del curso a <code>{course}/materials/</code>, en la
-				carpeta de estudio, y aparecen acá.
-			</p>
-		</div>
-	);
+export function ReadView(props: ReadProps) {
+	// A new file starts with a fresh page, scroll and drafts.
+	return <Read key={props.file} {...props} />;
 }
-
-// ── Read ─────────────────────────────────────────────────────────────────────
 
 function Read({
 	store,
@@ -89,16 +73,26 @@ function Read({
 	file,
 	onFile,
 	layout,
-}: {
-	store: SessionStore;
-	state: SessionState;
-	files: Material[];
-	file: string;
-	onFile: (path: string) => void;
-	layout: Layout;
-}) {
+	memory,
+	draft: composerDraft,
+}: ReadProps) {
 	const scroller = useRef<HTMLDivElement>(null);
-	const [chat, setChat] = useState(false);
+	const [kept] = useState(() =>
+		memory.current?.file === file ? memory.current : undefined,
+	);
+	const [chat, setChat] = useState(kept?.chat ?? false);
+	// The memory follows this file: its scroll as it moves, and the chat.
+	const place = useRef(kept?.place);
+	useEffect(() => {
+		memory.current = { file, place: place.current, chat };
+	}, [memory, file, chat]);
+	const onPlace = useCallback(
+		(now: PagePlace) => {
+			place.current = now;
+			memory.current = { file, place: now, chat };
+		},
+		[memory, file, chat],
+	);
 	const [target, setTarget] = useState<{ turnId: string; n: number }>();
 	const [active, setActive] = useState<string>();
 	const [pending, setPending] = useState<Anchor>();
@@ -113,15 +107,7 @@ function Read({
 		[state.view, file],
 	);
 	const groups = useMemo(() => groupsOf(items), [items]);
-	const marks = useMemo<Mark[]>(
-		() =>
-			groups.map((g) => ({
-				key: g.key,
-				anchor: g.anchor,
-				kind: g.items.some((i) => i.kind === "turn") ? "question" : "note",
-			})),
-		[groups],
-	);
+	const marks = useMemo(() => marksOf(groups), [groups]);
 
 	const openTurn = useCallback((turnId: string) => {
 		// The card or pin that was hovered goes away; so does its emphasis.
@@ -193,6 +179,7 @@ function Read({
 			target={target}
 			onClose={closeChat}
 			closeIcon={closeIcon}
+			draft={composerDraft}
 		/>
 	);
 
@@ -207,6 +194,8 @@ function Read({
 				onHover={phone ? undefined : setActive}
 				onPages={setPages}
 				onPage={setPage}
+				place={kept?.place}
+				onPlace={onPlace}
 				compact={phone}
 			/>
 		</Suspense>

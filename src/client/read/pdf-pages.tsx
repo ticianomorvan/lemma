@@ -31,8 +31,11 @@ import {
 	anchorRange,
 	layers,
 	layersChanged,
+	type PagePlace,
 	paint,
+	placeOf,
 	rangeHas,
+	restorePlace,
 } from "./anchors.ts";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -56,6 +59,8 @@ export default function PdfPages({
 	onHover,
 	onPages,
 	onPage,
+	place,
+	onPlace,
 	compact = false,
 }: {
 	/** The file, relative to the study root. */
@@ -71,6 +76,10 @@ export default function PdfPages({
 	onPages?: (count: number) => void;
 	/** The page that fills most of the scroller's view, as it changes. */
 	onPage?: (page: number) => void;
+	/** Where to open the pages, once they are laid out. */
+	place?: PagePlace;
+	/** Where the reader is: once the pages are laid out (and `place` restored), then as they scroll. */
+	onPlace?: (place: PagePlace) => void;
 	/** Tighter spacing, for a phone. */
 	compact?: boolean;
 }) {
@@ -78,7 +87,10 @@ export default function PdfPages({
 	const width = useWidth(root);
 	const [count, setCount] = useState(0);
 	const [ratio, setRatio] = useState(Math.SQRT2);
+	/** The first page is measured, so every page has its final place. */
+	const [measured, setMeasured] = useState(false);
 	const near = useNearPages(root, width > 0 ? count : 0);
+	useKeepPlace(root, width > 0 && measured, place, onPlace);
 	useVisiblePage(root, width > 0 ? count : 0, onPage);
 	const drawn = useSyncExternalStore(layers.subscribe, layers.version);
 
@@ -160,9 +172,13 @@ export default function PdfPages({
 					onLoadSuccess={async (pdf) => {
 						setCount(pdf.numPages);
 						onPages?.(pdf.numPages);
-						const first = await pdf.getPage(1);
-						const { width: w, height: h } = first.getViewport({ scale: 1 });
-						if (w > 0) setRatio(h / w);
+						try {
+							const first = await pdf.getPage(1);
+							const { width: w, height: h } = first.getViewport({ scale: 1 });
+							if (w > 0) setRatio(h / w);
+						} finally {
+							setMeasured(true);
+						}
 					}}
 					error={
 						<p
@@ -264,6 +280,53 @@ function useNearPages(
 	// biome-ignore lint/correctness/useExhaustiveDependencies: on every change
 	useEffect(() => layersChanged(), [near]);
 	return near;
+}
+
+/**
+ * Opens the pages at `place` once they are laid out, then reports the
+ * reader's place: once right away, then as they scroll. Nothing is reported
+ * before that, so the top of the file doesn't overwrite a place still to come.
+ */
+function useKeepPlace(
+	root: React.RefObject<HTMLElement | null>,
+	ready: boolean,
+	place?: PagePlace,
+	onPlace?: (place: PagePlace) => void,
+) {
+	const initial = useRef(place);
+	const report = useRef(onPlace);
+	report.current = onPlace;
+	useEffect(() => {
+		const scroller = root.current?.closest("[data-pdf-scroller]");
+		if (!ready || !scroller) return;
+		let frame = 0;
+		let tries = 0;
+		const onScroll = () => {
+			frame ||= requestAnimationFrame(() => {
+				frame = 0;
+				const now = placeOf(scroller);
+				if (now) report.current?.(now);
+			});
+		};
+		const restore = () => {
+			const target = initial.current;
+			// The pages render a frame after they are laid out.
+			if (target && !restorePlace(scroller, target) && tries++ < 10) {
+				frame = requestAnimationFrame(restore);
+				return;
+			}
+			initial.current = undefined;
+			frame = 0;
+			const now = placeOf(scroller);
+			if (now) report.current?.(now);
+			scroller.addEventListener("scroll", onScroll, { passive: true });
+		};
+		frame = requestAnimationFrame(restore);
+		return () => {
+			cancelAnimationFrame(frame);
+			scroller.removeEventListener("scroll", onScroll);
+		};
+	}, [root, ready]);
 }
 
 /** Reports the page that fills most of the scroller's view. */
