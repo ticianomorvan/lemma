@@ -1,0 +1,41 @@
+/* The Read view's motions. The page and its highlights are in pdf-pages.css. */
+
+@layer components {
+	[data-flash] {
+		animation: flash 1.2s var(--ease-out);
+	}
+	.select-pop {
+		animation: select-pop 150ms var(--ease-out);
+	}
+	.panel-in {
+		animation: panel-in 240ms var(--ease-drawer);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		[data-flash],
+		.select-pop {
+			animation: none;
+		}
+		.panel-in {
+			animation: fade-in 150ms ease;
+		}
+	}
+}
+
+@keyframes flash {
+	0%,
+	40% {
+		box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 35%, transparent);
+	}
+}
+@keyframes select-pop {
+	from {
+		opacity: 0;
+		transform: translateY(4px) scale(0.96);
+	}
+}
+@keyframes panel-in {
+	from {
+		transform: translateX(24px);
+		opacity: 0;
+	}
+}

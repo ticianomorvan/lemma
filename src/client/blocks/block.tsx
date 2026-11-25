@@ -48,17 +48,17 @@ export function DiagramBlock({
 	const Renderer = RENDERERS[kind];
 	const failure = (error: Error) => (
 		<Report state="error" set={setState}>
-			<p className="block-error" role="alert">
+			<p className="diagram-error" role="alert">
 				<span className="font-medium">No se pudo dibujar:</span> {error.message}
 			</p>
-			<pre className="block-source">{source}</pre>
+			<pre className="diagram-source">{source}</pre>
 		</Report>
 	);
 	let body: ReactNode;
 	if (open) {
 		body = (
 			<Report state="pending" set={setState}>
-				<pre className="block-source">{source || " "}</pre>
+				<pre className="diagram-source">{source || " "}</pre>
 			</Report>
 		);
 	} else if (source.length > maxSource) {
@@ -71,7 +71,7 @@ export function DiagramBlock({
 				<Suspense
 					fallback={
 						<Report state="loading" set={setState}>
-							<div className="block-loading" />
+							<div className="diagram-loading" />
 						</Report>
 					}
 				>
@@ -83,9 +83,9 @@ export function DiagramBlock({
 		);
 	}
 	return (
-		<figure className="block" data-block={kind} data-state={state}>
-			<figcaption className="block-head">
-				<span className={cn("block-chip", state === "error" && "is-error")}>
+		<figure className="diagram" data-block={kind} data-state={state}>
+			<figcaption className="diagram-head">
+				<span className={cn("diagram-chip", state === "error" && "is-error")}>
 					{label}
 				</span>
 				{state === "pending" && (
@@ -94,7 +94,7 @@ export function DiagramBlock({
 				{state === "ok" && (
 					<button
 						type="button"
-						className="block-toggle"
+						className="diagram-toggle"
 						aria-pressed={showSource}
 						onClick={() => setShowSource((v) => !v)}
 					>
@@ -103,9 +103,9 @@ export function DiagramBlock({
 					</button>
 				)}
 			</figcaption>
-			<div className="block-body">{body}</div>
+			<div className="diagram-body">{body}</div>
 			{state === "ok" && showSource && (
-				<pre className="block-source">{source}</pre>
+				<pre className="diagram-source">{source}</pre>
 			)}
 		</figure>
 	);

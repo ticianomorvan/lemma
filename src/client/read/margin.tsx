@@ -11,6 +11,7 @@ import {
 	useLayoutEffect,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 import {
 	Popover,
@@ -18,11 +19,12 @@ import {
 	PopoverTrigger,
 } from "#components/ui/popover.tsx";
 import { cn } from "#lib/utils.ts";
-import type { Anchor } from "../../../shared/protocol.ts";
-import { Markdown } from "../../markdown/lazy.tsx";
-import { snippet } from "../../thread/model.ts";
-import { TurnBlocks } from "../../thread/parts.tsx";
-import { anchorRect, type Group, type Item, preview, stack } from "./items.ts";
+import type { Anchor } from "../../shared/protocol.ts";
+import { Markdown } from "../markdown/lazy.tsx";
+import { snippet } from "../thread/model.ts";
+import { TurnBlocks } from "../thread/parts.tsx";
+import { anchorRect, layers } from "./anchors.ts";
+import { type Group, type Item, preview, stack } from "./items.ts";
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
@@ -30,8 +32,10 @@ type Unit = { key: string; rect: () => DOMRect | undefined };
 
 /**
  * Where each unit goes in a column: its passage's top, relative to the
- * column, pushed down past the unit above. Re-measured when anything in the
- * column or the page resizes.
+ * column, pushed down past the unit above, and the passage's height. Units
+ * whose passage isn't drawn (its page is off screen) are left out.
+ * Re-measured when anything in the column or the page resizes, and when a
+ * page's text layer is drawn.
  */
 function useColumn(
 	column: RefObject<HTMLElement | null>,
@@ -42,23 +46,27 @@ function useColumn(
 	const [layout, setLayout] = useState<{
 		top: Map<string, number>;
 		want: Map<string, number>;
+		height: Map<string, number>;
 		floor: number;
-	}>({ top: new Map(), want: new Map(), floor: 0 });
+	}>({ top: new Map(), want: new Map(), height: new Map(), floor: 0 });
 	const [tick, setTick] = useState(0);
+	const drawn = useSyncExternalStore(layers.subscribe, layers.version);
 	const key = units.map((u) => u.key).join(" ");
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `tick` re-measures
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `tick` and `drawn` re-measure
 	useLayoutEffect(() => {
 		const col = column.current;
 		if (!col) return;
 		const base = col.getBoundingClientRect().top;
 		const want = new Map<string, number>();
+		const height = new Map<string, number>();
 		const wants = units.flatMap((u) => {
 			const r = u.rect();
 			const box = boxes.current.get(u.key);
-			if (!r || !box) return [];
+			if (!r || !box || (r.width === 0 && r.height === 0)) return [];
 			const top = r.top - base - 6;
 			want.set(u.key, r.top - base);
+			height.set(u.key, r.height);
 			return [{ key: u.key, top, height: box.offsetHeight }];
 		});
 		const top = stack(wants, gap);
@@ -67,11 +75,14 @@ function useColumn(
 			floor = Math.max(floor, (top.get(w.key) ?? 0) + w.height);
 		}
 		setLayout((old) =>
-			same(old.top, top) && same(old.want, want) && old.floor === floor
+			same(old.top, top) &&
+			same(old.want, want) &&
+			same(old.height, height) &&
+			old.floor === floor
 				? old
-				: { top, want, floor },
+				: { top, want, height, floor },
 		);
-	}, [key, tick, gap]);
+	}, [key, tick, gap, drawn]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: observe the boxes `key` names
 	useLayoutEffect(() => {
@@ -522,11 +533,10 @@ export function Gutter({
 		key: g.key,
 		rect: () => anchorRect(g.anchor),
 	}));
-	const { top, want, ref } = useColumn(column, units, 4);
+	const { top, want, height, ref } = useColumn(column, units, 4);
 	return (
 		<section ref={column} aria-label="Marcadores" className="relative w-9">
 			{groups.map((g) => {
-				const r = anchorRect(g.anchor);
 				const y = top.get(g.key) ?? want.get(g.key) ?? 0;
 				return (
 					<div
@@ -542,7 +552,7 @@ export function Gutter({
 					>
 						<BarPin
 							group={g}
-							height={r?.height ?? 24}
+							height={height.get(g.key) ?? 24}
 							onOpenTurn={onOpenTurn}
 						/>
 					</div>

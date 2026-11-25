@@ -6,6 +6,7 @@
  * Served from the build at /fixtures/blocks.html; `?theme=light|dark`.
  * It holds no data and calls no API.
  */
+import "../zod-config.ts";
 import "../globals.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

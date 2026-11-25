@@ -57,5 +57,5 @@ export function SvgBlock({
 			aria-label={BLOCK_KINDS[kind].label}
 		/>
 	);
-	return scroll ? <div className="block-scroll">{node}</div> : node;
+	return scroll ? <div className="diagram-scroll">{node}</div> : node;
 }

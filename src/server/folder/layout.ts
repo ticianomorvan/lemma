@@ -9,6 +9,9 @@ const RESERVED = new Set(["inbox"]);
 
 export const sessionsDir = (course: string) => `${course}/sessions`;
 
+/** Where a course's PDFs and other material live. */
+export const materialsDir = (course: string) => `${course}/materials`;
+
 /** A top-level folder that is a course: not hidden and not reserved. */
 export function isCourse(name: string) {
 	return !name.startsWith(".") && !RESERVED.has(name.toLowerCase());

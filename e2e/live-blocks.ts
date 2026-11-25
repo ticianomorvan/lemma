@@ -137,11 +137,11 @@ async function ask(
 			.waitFor({ state: "hidden", timeout: 240_000 });
 		// Renderers load lazily; give them a moment to settle.
 		await page.waitForFunction(
-			() => !document.querySelector('.block[data-state="loading"]'),
+			() => !document.querySelector('.diagram[data-state="loading"]'),
 			undefined,
 			{ timeout: 20_000 },
 		);
-		const kinds = await page.$$eval(".answer .block", (els) =>
+		const kinds = await page.$$eval(".answer .diagram", (els) =>
 			Object.fromEntries(
 				els.map((e, i) => [
 					`${e.getAttribute("data-block")}#${i}`,
@@ -150,7 +150,7 @@ async function ask(
 			),
 		);
 		const errors = await page
-			.locator('.block[data-state="error"] .block-error')
+			.locator('.diagram[data-state="error"] .diagram-error')
 			.allTextContents();
 		notes.push(...errors);
 		const katexErrors = await page.locator(".katex-error").count();

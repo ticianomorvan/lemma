@@ -20,6 +20,13 @@
  *
  * ## Claude
  *
+ * > [!thinking]- Pensó
+ * > Calculo la esperanza de X².
+ *
+ * > [!tool] mcp__study__calc
+ * > {"expr":"0.3 * (1 - 0.3)"}
+ * > ✓ 0.21
+ *
  * Porque …
  *
  * ## Nota
@@ -33,6 +40,11 @@
  * - Entries are separated by the exact heading lines in `HEADINGS`. A line in
  *   an entry that would read as one gets a leading `\` (which Markdown shows as
  *   the literal text), and parsing removes it again.
+ * - An answer is a list of parts in the order they streamed: text, a thinking
+ *   summary (a folded `> [!thinking]-` callout) and tool calls (a `> [!tool]`
+ *   callout with the tool's name, its input as one line of JSON, and `✓` or
+ *   `✗` with the first line of its result). Answer lines that would read as
+ *   either callout's first line are escaped like headings.
  * - Session files always sit at `<course>/sessions/<file>.md`, so anchor links
  *   are `../../<root-relative path>` and open in an editor.
  * - Entry text is trimmed when written.
@@ -56,9 +68,23 @@ export const TranscriptMeta = z.looseObject({
 });
 export type TranscriptMeta = z.infer<typeof TranscriptMeta>;
 
+/**
+ * One part of an answer. A tool's `name`, `input` and `summary` are single
+ * lines (`partsOf` makes them so).
+ */
+export type Part =
+	| { kind: "text"; text: string }
+	| { kind: "thinking"; text: string }
+	| {
+			kind: "tool";
+			name: string;
+			input: string;
+			result?: { ok: boolean; summary: string };
+	  };
+
 export type Entry =
 	| { kind: "user"; text: string; anchor?: Anchor }
-	| { kind: "answer"; text: string; reason: TurnEndReason }
+	| { kind: "answer"; parts: Part[]; reason: TurnEndReason }
 	| { kind: "note"; anchor: Anchor; text?: string };
 
 export type Transcript = { meta: TranscriptMeta; body: string };
@@ -71,6 +97,14 @@ const HEADINGS = {
 	note: "## Nota",
 } as const;
 const HEADING_LINES = new Set<string>(Object.values(HEADINGS));
+const THINKING = "> [!thinking]- Pensó";
+const TOOL = /^> \[!tool\] (.+)$/;
+const RESULT = /^> ([✓✗])(?: (.*))?$/;
+/** Lines that start an entry or an answer part, so answer text escapes them. */
+const isMarker = (line: string) =>
+	HEADING_LINES.has(line) ||
+	line.startsWith("> [!thinking]") ||
+	line.startsWith("> [!tool]");
 const LINK = "../../";
 
 // ── Whole files ─────────────────────────────────────────────────────────────
@@ -125,7 +159,10 @@ export function formatEntry(entry: Entry): string {
 			return section(HEADINGS.user, quote + escapeHeadings(entry.text.trim()));
 		}
 		case "answer":
-			return section(HEADINGS[entry.reason], escapeHeadings(entry.text.trim()));
+			return section(
+				HEADINGS[entry.reason],
+				entry.parts.map(formatPart).filter(Boolean).join("\n\n"),
+			);
 		case "note": {
 			const inner = [
 				`[!note] ${anchorLink(entry.anchor)}`,
@@ -161,6 +198,130 @@ export function parseBody(body: string): Entry[] {
 	return entries;
 }
 
+function formatPart(part: Part): string {
+	switch (part.kind) {
+		case "text":
+			return escapeHeadings(part.text.trim());
+		case "thinking": {
+			const text = part.text.trim();
+			return text ? [THINKING, ...quoteLines(text)].join("\n") : "";
+		}
+		case "tool": {
+			const lines = [
+				`> [!tool] ${part.name}`,
+				part.input ? `> ${part.input}` : ">",
+			];
+			if (part.result) {
+				const mark = part.result.ok ? "✓" : "✗";
+				const { summary } = part.result;
+				lines.push(summary ? `> ${mark} ${summary}` : `> ${mark}`);
+			}
+			return lines.join("\n");
+		}
+	}
+}
+
+function parseParts(lines: string[]): Part[] {
+	const parts: Part[] = [];
+	let text: string[] = [];
+	const flush = () => {
+		const kept = trimLines(text);
+		if (kept.length) parts.push({ kind: "text", text: unescapeHeadings(kept) });
+		text = [];
+	};
+	let i = 0;
+	const quoted = () => {
+		const out: string[] = [];
+		while (i < lines.length && lines[i]?.startsWith(">")) {
+			out.push(lines[i] ?? "");
+			i += 1;
+		}
+		return out;
+	};
+	while (i < lines.length) {
+		const line = lines[i] ?? "";
+		const tool = TOOL.exec(line);
+		if (line === THINKING) {
+			flush();
+			i += 1;
+			const body = trimLines(quoted().map(unquote)).join("\n");
+			if (body) parts.push({ kind: "thinking", text: body });
+		} else if (tool) {
+			flush();
+			i += 1;
+			const [input = ">", result] = quoted();
+			const done = result ? RESULT.exec(result) : null;
+			parts.push({
+				kind: "tool",
+				name: tool[1] ?? "",
+				input: unquote(input),
+				...(done
+					? { result: { ok: done[1] === "✓", summary: done[2] ?? "" } }
+					: {}),
+			});
+		} else {
+			text.push(line);
+			i += 1;
+		}
+	}
+	flush();
+	return parts;
+}
+
+/**
+ * An answer's parts from its streamed blocks: empty thinking is dropped,
+ * text blocks in a row are joined, and tool fields become single lines.
+ */
+export function partsOf(
+	blocks: {
+		kind: "text" | "thinking" | "tool";
+		text: string;
+		name?: string;
+		result?: { ok: boolean; summary: string };
+	}[],
+): Part[] {
+	const parts: Part[] = [];
+	for (const block of blocks) {
+		const last = parts.at(-1);
+		if (block.kind === "text") {
+			const text = block.text.trim();
+			if (!text) continue;
+			if (last?.kind === "text") last.text = `${last.text}\n\n${text}`;
+			else parts.push({ kind: "text", text });
+		} else if (block.kind === "thinking") {
+			const text = block.text.trim();
+			if (text) parts.push({ kind: "thinking", text });
+		} else {
+			parts.push({
+				kind: "tool",
+				name: oneLine(block.name ?? "") || "tool",
+				input: compactJson(block.text),
+				...(block.result
+					? {
+							result: {
+								ok: block.result.ok,
+								summary: oneLine(block.result.summary),
+							},
+						}
+					: {}),
+			});
+		}
+	}
+	return parts;
+}
+
+/** Text on one line, whitespace runs collapsed. */
+export const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** A tool's input as one line: compact JSON, or the partial text on one line. */
+function compactJson(text: string) {
+	try {
+		return JSON.stringify(JSON.parse(text));
+	} catch {
+		return oneLine(text);
+	}
+}
+
 function parseEntry(heading: string, lines: string[]): Entry | null {
 	switch (heading) {
 		case HEADINGS.user: {
@@ -171,19 +332,15 @@ function parseEntry(heading: string, lines: string[]): Entry | null {
 				: { kind: "user", text };
 		}
 		case HEADINGS.completed:
-			return {
-				kind: "answer",
-				text: unescapeHeadings(lines),
-				reason: "completed",
-			};
+			return { kind: "answer", parts: parseParts(lines), reason: "completed" };
 		case HEADINGS.interrupted:
 			return {
 				kind: "answer",
-				text: unescapeHeadings(lines),
+				parts: parseParts(lines),
 				reason: "interrupted",
 			};
 		case HEADINGS.error:
-			return { kind: "answer", text: unescapeHeadings(lines), reason: "error" };
+			return { kind: "answer", parts: parseParts(lines), reason: "error" };
 		case HEADINGS.note: {
 			const inner = lines.map(unquote);
 			const first = /^\[!note\] (.*)$/.exec(inner[0] ?? "");
@@ -272,20 +429,21 @@ function trimLines(lines: string[]) {
 	return lines.slice(start, end);
 }
 
-/** `\`-prefixes every line that, stripped of leading `\`s, is a heading line. */
+/**
+ * `\`-prefixes every line that, stripped of leading `\`s, is a heading line
+ * or the first line of an answer's thinking or tool callout.
+ */
 function escapeHeadings(text: string) {
 	return text
 		.split("\n")
-		.map((l) => (HEADING_LINES.has(l.replace(/^\\+/, "")) ? `\\${l}` : l))
+		.map((l) => (isMarker(l.replace(/^\\+/, "")) ? `\\${l}` : l))
 		.join("\n");
 }
 
 function unescapeHeadings(lines: string[]) {
 	return lines
 		.map((l) =>
-			l.startsWith("\\") && HEADING_LINES.has(l.replace(/^\\+/, ""))
-				? l.slice(1)
-				: l,
+			l.startsWith("\\") && isMarker(l.replace(/^\\+/, "")) ? l.slice(1) : l,
 		)
 		.join("\n");
 }

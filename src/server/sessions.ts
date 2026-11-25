@@ -13,7 +13,11 @@
  * - An agent idle for `idleMs` is closed; its session stays loaded.
  */
 import type {
+	Block,
 	CreateSessionBody,
+	Note,
+	NoteBody,
+	NoteResponse,
 	PatchSessionBody,
 	SendMessageBody,
 	SendMessageResponse,
@@ -25,6 +29,7 @@ import type {
 	SnapshotMessage,
 	Turn,
 	TurnEndReason,
+	UserMessage,
 } from "../shared/protocol.ts";
 import { apply, emptyView } from "../shared/reducer.ts";
 import type { AgentDriver, AgentSession } from "./agent/driver.ts";
@@ -34,7 +39,10 @@ import {
 	appendEntry,
 	bodyHash,
 	format,
+	oneLine,
+	type Part,
 	parseBody,
+	partsOf,
 	read,
 	split,
 	type Transcript,
@@ -184,6 +192,36 @@ export class Sessions {
 		return { turnId, queued };
 	}
 
+	/**
+	 * Appends a note (a highlight, with or without text) to the transcript. It
+	 * starts no turn. A note never makes the agent start over: hashes that
+	 * matched the file before it (the live agent's and the front matter's)
+	 * are moved past it, and the next message carries every note after the
+	 * last question (see `next`).
+	 */
+	note(id: string, body: NoteBody): NoteResponse | undefined {
+		const s = this.load(id);
+		if (!s) return undefined;
+		const anchor = { ...body.anchor, text: body.anchor.text.trim() };
+		const text = body.text?.trim();
+		const note: Note = {
+			id: crypto.randomUUID(),
+			anchor,
+			...(text ? { text } : {}),
+		};
+		const before = read(this.folder, s.path);
+		const after = appendEntry(before, { kind: "note", ...note });
+		const was = bodyHash(before.body);
+		const now = bodyHash(after.body);
+		if (after.meta.sdk_body_hash === was) {
+			after.meta = { ...after.meta, sdk_body_hash: now };
+		}
+		write(this.folder, s.path, after);
+		if (s.agent && s.agentHash === was) s.agentHash = now;
+		this.emit(id, s, { type: "note", ...note });
+		return { id: note.id };
+	}
+
 	/** Changes the title or mode in the front matter. */
 	update(id: string, body: PatchSessionBody): SessionMeta | undefined {
 		const s = this.load(id);
@@ -276,12 +314,14 @@ export class Sessions {
 		this.emit(id, s, { type: "turn_start", turnId: user.turnId });
 		let start: { resumeId?: string; seed?: string };
 		let asked: string;
+		let notes: Note[];
 		try {
 			const before = read(this.folder, s.path);
 			const hash = bodyHash(before.body);
 			if (s.agent && hash !== s.agentHash) this.stop(s);
 			const { sdk_session_id, sdk_body_hash } = before.meta;
 			const history = before.body.trim();
+			notes = notesSinceLastQuestion(before.body);
 			start = {
 				...(sdk_session_id && sdk_body_hash === hash
 					? { resumeId: sdk_session_id }
@@ -305,6 +345,7 @@ export class Sessions {
 		const push = async () => {
 			if (!current()) return;
 			let agent = s.agent;
+			const fresh = !agent;
 			try {
 				if (!agent) {
 					agent = await this.driver.start({ folder: this.folder, ...start });
@@ -313,7 +354,8 @@ export class Sessions {
 					s.agentHash = asked;
 					void this.run(id, s, agent);
 				}
-				agent.push(user.text);
+				// An agent seeded with the file has its notes already.
+				agent.push(agentMessage(user, fresh && !agent.resumed ? [] : notes));
 				if (s.cancel === user.turnId) {
 					s.cancel = undefined;
 					void this.interrupt(id);
@@ -356,14 +398,10 @@ export class Sessions {
 	 * file was edited during, records nothing, so the next start reseeds.
 	 */
 	private finish(s: LiveSession, turn: Turn, reason: TurnEndReason) {
-		const text = turn.blocks
-			.filter((b) => b.kind === "text")
-			.map((b) => b.text.trim())
-			.filter(Boolean)
-			.join("\n\n");
+		const parts = partsOf(turn.blocks);
 		try {
 			const before = read(this.folder, s.path);
-			const after = appendEntry(before, { kind: "answer", text, reason });
+			const after = appendEntry(before, { kind: "answer", parts, reason });
 			const agent = s.agent;
 			if (agent && bodyHash(before.body) === s.agentHash) {
 				s.agentHash = bodyHash(after.body);
@@ -489,9 +527,7 @@ export function viewOf(transcript: Transcript, id: string): SessionView {
 		} else if (entry.kind === "answer") {
 			const turn = turns.at(-1);
 			if (!turn || turn.blocks.length > 0) continue;
-			turn.blocks = entry.text
-				? [{ id: `${key}:0`, kind: "text", text: entry.text, done: true }]
-				: [];
+			turn.blocks = entry.parts.map((part, j) => blockOf(part, `${key}:${j}`));
 			turn.end = { reason: entry.reason, usage: NO_USAGE };
 		} else {
 			notes.push({
@@ -504,6 +540,24 @@ export function viewOf(transcript: Transcript, id: string): SessionView {
 	return { ...view, turns, notes };
 }
 
+/** A transcript's answer part as the thread's block. */
+function blockOf(part: Part, id: string): Block {
+	switch (part.kind) {
+		case "text":
+		case "thinking":
+			return { id, kind: part.kind, text: part.text, done: true };
+		case "tool":
+			return {
+				id,
+				kind: "tool",
+				name: part.name,
+				text: part.input,
+				done: true,
+				...(part.result ? { result: part.result } : {}),
+			};
+	}
+}
+
 function clientMeta(meta: Partial<TranscriptMeta> & SessionMeta): SessionMeta {
 	return {
 		id: meta.id,
@@ -512,6 +566,68 @@ function clientMeta(meta: Partial<TranscriptMeta> & SessionMeta): SessionMeta {
 		created: meta.created,
 		...(meta.mode ? { mode: meta.mode } : {}),
 	};
+}
+
+/**
+ * What Claude gets for a question: the notes added since its last message,
+ * the passage it quotes (with the file and page, so Claude can `Read` it),
+ * then the question.
+ */
+export function agentMessage(
+	user: Pick<UserMessage, "text" | "anchor">,
+	notes: Note[] = [],
+) {
+	const parts: string[] = [];
+	if (notes.length > 0) {
+		parts.push(
+			[
+				"<notes>",
+				"The student added these notes to the session since your last answer:",
+				...notes.map(
+					(n) =>
+						`- On ${attr(n.anchor.path)}, page ${n.anchor.page}, they marked "${oneLine(n.anchor.text)}"${n.text ? `: ${n.text}` : "."}`,
+				),
+				"</notes>",
+			].join("\n"),
+		);
+	}
+	if (user.anchor) {
+		const { path, page, text } = user.anchor;
+		parts.push(
+			[
+				`<passage path="${attr(path)}" page="${page}">`,
+				"The student selected this passage on the page they are reading and asks about it:",
+				// The quote is the PDF's text: it may not close the tag.
+				text.trim().replace(/<(\/?passage)/gi, "&lt;$1"),
+				"</passage>",
+			].join("\n"),
+		);
+	}
+	parts.push(user.text);
+	return parts.join("\n\n");
+}
+
+const attr = (value: string) =>
+	value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+/**
+ * The notes after the transcript's last question: the ones Claude hasn't
+ * been sent. (A note written during a turn goes with the next message.)
+ */
+function notesSinceLastQuestion(body: string): Note[] {
+	const entries = parseBody(body);
+	const last = entries.findLastIndex((e) => e.kind === "user");
+	return entries.slice(last + 1).flatMap((e, i) =>
+		e.kind === "note"
+			? [
+					{
+						id: String(i),
+						anchor: e.anchor,
+						...(e.text ? { text: e.text } : {}),
+					},
+				]
+			: [],
+	);
 }
 
 /** The note a fresh agent gets ahead of its first message. */

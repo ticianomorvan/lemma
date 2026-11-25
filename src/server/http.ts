@@ -8,6 +8,8 @@ import {
 	type DevicesResponse,
 	type ErrorResponse,
 	type InterruptResponse,
+	type MaterialsResponse,
+	NoteBody,
 	type PairResponse,
 	PatchSessionBody,
 	SendMessageBody,
@@ -19,6 +21,7 @@ import type { AgentDriver } from "./agent/driver.ts";
 import type { Auth } from "./auth/auth.ts";
 import { chooseStudyFolder } from "./config.ts";
 import { Folder } from "./folder/folder.ts";
+import { isCourseName, materialsDir } from "./folder/layout.ts";
 import { BadRequest, Sessions, topic } from "./sessions.ts";
 
 export type ServerOptions = {
@@ -261,6 +264,23 @@ export async function startServer({
 					),
 				),
 			},
+			"/api/sessions/:id/notes": {
+				POST: withStudy((req, { sessions }) =>
+					withBody(req, NoteBody, (body) =>
+						found(sessions.note(req.params.id, body), 201),
+					),
+				),
+			},
+			"/api/courses/:course/materials": {
+				GET: withStudy((req, { folder }) =>
+					Response.json({
+						files: materials(folder, req.params.course),
+					} satisfies MaterialsResponse),
+				),
+			},
+			"/files/*": {
+				GET: withStudy((req, { folder }) => serveFile(req, folder)),
+			},
 			"/api/sessions/:id/interrupt": {
 				POST: withStudy(async (req, { sessions }) => {
 					const interrupted = await sessions.interrupt(req.params.id);
@@ -388,6 +408,135 @@ function parseJson(text: string): unknown {
 	} catch {
 		return undefined;
 	}
+}
+
+// ── Study files ─────────────────────────────────────────────────────────────
+
+/** The PDFs under `<course>/materials/`, a few folders deep, by path. */
+function materials(folder: Folder, course: string) {
+	if (!isCourseName(course)) return [];
+	const files: MaterialsResponse["files"] = [];
+	const walk = (dir: string, depth: number) => {
+		let entries: ReturnType<Folder["list"]>;
+		try {
+			entries = folder.list(dir);
+		} catch {
+			// A link out of the folder, or not a folder.
+			return;
+		}
+		for (const e of entries) {
+			const path = `${dir}/${e.name}`;
+			if (e.dir) {
+				if (depth < 3) walk(path, depth + 1);
+			} else if (/\.pdf$/i.test(e.name) && folder.resolve(path)) {
+				files.push({ path, name: e.name });
+			}
+		}
+	};
+	walk(materialsDir(course), 0);
+	return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** What `/files/*` sends as which type. Anything else is a download. */
+const FILE_TYPES: Record<string, string> = {
+	".pdf": "application/pdf",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".md": "text/markdown; charset=utf-8",
+	".txt": "text/plain; charset=utf-8",
+};
+
+/**
+ * A file in the study folder, with byte ranges for pdf.js. The path goes
+ * through the folder's jail; hidden names, folders and anything outside the
+ * root are a 404. Files are never run as a page of this origin: the type comes
+ * from an allow-list, `nosniff` keeps it, and the CSP sandboxes any
+ * navigation to one.
+ */
+async function serveFile(req: Request, folder: Folder) {
+	const notFound = () => error(404, "not_found", "no such file");
+	let path: string;
+	try {
+		path = new URL(req.url).pathname
+			.slice("/files/".length)
+			.split("/")
+			.map(decodeURIComponent)
+			.join("/");
+	} catch {
+		return notFound();
+	}
+	const hidden = (p: string) =>
+		p.split("/").some((x) => x === "" || x.startsWith("."));
+	if (hidden(path) || /[\\\0]/.test(path)) return notFound();
+	const real = folder.resolve(path);
+	// A link inside the folder that points into a hidden one is refused too.
+	if (!real || hidden(folder.relative(real))) return notFound();
+	const file = Bun.file(real);
+	let size: number;
+	try {
+		const stat = await file.stat();
+		if (!stat.isFile()) return notFound();
+		size = stat.size;
+	} catch {
+		return notFound();
+	}
+	const type = FILE_TYPES[extname(real).toLowerCase()];
+	const headers: Record<string, string> = {
+		"accept-ranges": "bytes",
+		"content-type": type ?? "application/octet-stream",
+		"x-content-type-options": "nosniff",
+		"content-security-policy": "sandbox; default-src 'none'",
+		"cache-control": "no-cache",
+		...(type ? {} : { "content-disposition": "attachment" }),
+	};
+	const range = req.headers.get("range");
+	if (!range) {
+		return new Response(file, {
+			headers: { ...headers, "content-length": String(size) },
+		});
+	}
+	const bytes = parseRange(range, size);
+	if (!bytes) {
+		return new Response(null, {
+			status: 416,
+			headers: { ...headers, "content-range": `bytes */${size}` },
+		});
+	}
+	const [start, end] = bytes;
+	return new Response(file.slice(start, end + 1), {
+		status: 206,
+		headers: {
+			...headers,
+			"content-range": `bytes ${start}-${end}/${size}`,
+			"content-length": String(end - start + 1),
+		},
+	});
+}
+
+/**
+ * One `bytes=` range (pdf.js asks for one at a time) as inclusive offsets, or
+ * null when it can't be served. Several ranges are refused too.
+ */
+export function parseRange(
+	header: string,
+	size: number,
+): [number, number] | null {
+	const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+	if (!m || (m[1] === "" && m[2] === "")) return null;
+	let start: number;
+	let end: number;
+	if (m[1] === "") {
+		// The last N bytes.
+		const n = Number(m[2]);
+		if (n === 0) return null;
+		start = Math.max(0, size - n);
+		end = size - 1;
+	} else {
+		start = Number(m[1]);
+		end = m[2] === "" ? size - 1 : Math.min(Number(m[2]), size - 1);
+	}
+	return start <= end && start < size ? [start, end] : null;
 }
 
 type Route = (req: Request) => Response | Promise<Response>;
