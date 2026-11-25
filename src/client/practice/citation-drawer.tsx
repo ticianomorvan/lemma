@@ -107,17 +107,19 @@ function CitedPage({
 		() => marksOf(groups(marginItems(view, anchor.path))),
 		[view, anchor.path],
 	);
-	const start = useMemo(() => ({ page: anchor.page, into: 0 }), [anchor.page]);
 
-	// Once the drawer is at the page and its text layer is drawn, centre the
-	// passage (a jump: the drawer has only just opened) and flash it.
+	// Once the pages are laid out, jump to the cited page; once its text
+	// layer is drawn, centre the passage and flash it. Jumps, not glides:
+	// the drawer has only just opened.
 	const drawn = useSyncExternalStore(layers.subscribe, layers.version);
-	const revealed = useRef(false);
+	const step = useRef<"page" | "passage" | "done">("page");
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `drawn` retries as layers draw
 	useEffect(() => {
-		if (!placed || revealed.current || !anchorRange(anchor)) return;
-		revealed.current = true;
-		revealAnchor(anchor, { instant: true });
+		if (!placed || step.current === "done") return;
+		const found = !!anchorRange(anchor);
+		if (found || step.current === "page")
+			revealAnchor(anchor, { instant: true });
+		step.current = found ? "done" : "passage";
 	}, [placed, drawn, anchor]);
 
 	return (
@@ -161,7 +163,6 @@ function CitedPage({
 						path={anchor.path}
 						marks={marks}
 						active={active}
-						place={start}
 						onPlace={(now) => {
 							setPlaced(true);
 							onPlace(now);

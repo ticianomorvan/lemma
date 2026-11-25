@@ -284,7 +284,7 @@ function useNearPages(
 
 /**
  * Opens the pages at `place` once they are laid out, and holds it there
- * until something else scrolls them. Reports the reader's place: once right away, then
+ * until the reader does anything (scrolls, taps, clicks or types). Reports the reader's place: once right away, then
  * as they scroll. Nothing is reported before that, so the top of the file
  * doesn't overwrite a place still to come.
  */
@@ -301,21 +301,21 @@ function useKeepPlace(
 		const el = root.current;
 		const scroller = el?.closest("[data-pdf-scroller]");
 		if (!ready || !el || !scroller) return;
-		// The place is held while the pages settle (the width can still change
-		// as a scrollbar appears), until anything else scrolls them: the
-		// reader, or a reveal.
+		// The place is held while the pages settle (pages drawing, the width
+		// changing as a scrollbar appears), until the reader does anything.
 		let held = initial.current;
 		initial.current = undefined;
-		let expected = 0;
-		const hold = () => {
-			const done = !!held && restorePlace(scroller, held);
-			expected = scroller.scrollTop;
-			return done;
+		const hold = () => !!held && restorePlace(scroller, held);
+		const release = () => {
+			held = undefined;
 		};
+		const input = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+		for (const e of input) {
+			window.addEventListener(e, release, { capture: true, passive: true });
+		}
 		let frame = 0;
 		let tries = 0;
 		const onScroll = () => {
-			if (Math.abs(scroller.scrollTop - expected) > 2) held = undefined;
 			frame ||= requestAnimationFrame(() => {
 				frame = 0;
 				const now = placeOf(scroller);
@@ -342,6 +342,9 @@ function useKeepPlace(
 			cancelAnimationFrame(frame);
 			observer.disconnect();
 			scroller.removeEventListener("scroll", onScroll);
+			for (const e of input) {
+				window.removeEventListener(e, release, { capture: true });
+			}
 		};
 	}, [root, ready]);
 }
