@@ -52,8 +52,8 @@ export function Thread({
 	onCite?: (anchor: Anchor) => void;
 	/** Shown above the composer's text, such as the passage a question will quote. */
 	composerTop?: ReactNode;
-	/** The composer's text, when it should outlive this thread (switching views). */
-	draft?: ComposerDraft;
+	/** The composer's text, kept by the session so it outlives this thread (switching views). */
+	draft: ComposerDraft;
 	/** Where the reader was, kept across mounts; without it the thread opens at the bottom. */
 	place?: { current?: ThreadPlace };
 }) {

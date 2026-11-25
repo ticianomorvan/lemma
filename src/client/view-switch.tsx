@@ -38,13 +38,13 @@ export function ViewSwitch({
 	view,
 	onView,
 	layout,
-	noReading,
+	noPdfsIn,
 }: {
 	view?: View;
 	onView: (view: View) => void;
 	layout: Layout;
-	/** Set when the course has no PDFs: Read is off, and this says where to put them. */
-	noReading?: string;
+	/** The course, when it has no PDFs: Read is off, and its tip says where to put them. */
+	noPdfsIn?: string;
 }) {
 	const mod = isMac() ? "⌥" : "Alt+";
 	const iconOnly = layout === "phone";
@@ -54,7 +54,7 @@ export function ViewSwitch({
 		Icon: typeof BookOpen,
 		key: string,
 	) => {
-		const off = value === "read" && noReading !== undefined;
+		const off = value === "read" && noPdfsIn !== undefined;
 		const trigger = (
 			<TabsTrigger
 				value={value}
@@ -84,7 +84,10 @@ export function ViewSwitch({
 					{off ? (
 						<>
 							<span className="font-medium">Este curso no tiene apuntes</span>
-							<span className="opacity-80">{noReading}</span>
+							<span className="opacity-80">
+								Copiá los PDFs del curso a {noPdfsIn}/materials/, en la carpeta
+								de estudio.
+							</span>
 						</>
 					) : (
 						<>

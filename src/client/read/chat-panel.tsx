@@ -33,7 +33,7 @@ export function ChatPanel({
 	/** `panel` where it sits beside the page, `x` where it covers it. */
 	closeIcon?: "panel" | "x";
 	/** The composer's text, shared with Practice. */
-	draft?: ComposerDraft;
+	draft: ComposerDraft;
 }) {
 	const actions = useMemo<ThreadActions>(
 		() => ({

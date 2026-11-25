@@ -283,9 +283,10 @@ function useNearPages(
 }
 
 /**
- * Opens the pages at `place` once they are laid out, then reports the
- * reader's place: once right away, then as they scroll. Nothing is reported
- * before that, so the top of the file doesn't overwrite a place still to come.
+ * Opens the pages at `place` once they are laid out, and holds it there
+ * until something else scrolls them. Reports the reader's place: once right away, then
+ * as they scroll. Nothing is reported before that, so the top of the file
+ * doesn't overwrite a place still to come.
  */
 function useKeepPlace(
 	root: React.RefObject<HTMLElement | null>,
@@ -297,33 +298,49 @@ function useKeepPlace(
 	const report = useRef(onPlace);
 	report.current = onPlace;
 	useEffect(() => {
-		const scroller = root.current?.closest("[data-pdf-scroller]");
-		if (!ready || !scroller) return;
+		const el = root.current;
+		const scroller = el?.closest("[data-pdf-scroller]");
+		if (!ready || !el || !scroller) return;
+		// The place is held while the pages settle (the width can still change
+		// as a scrollbar appears), until anything else scrolls them: the
+		// reader, or a reveal.
+		let held = initial.current;
+		initial.current = undefined;
+		let expected = 0;
+		const hold = () => {
+			const done = !!held && restorePlace(scroller, held);
+			expected = scroller.scrollTop;
+			return done;
+		};
 		let frame = 0;
 		let tries = 0;
 		const onScroll = () => {
+			if (Math.abs(scroller.scrollTop - expected) > 2) held = undefined;
 			frame ||= requestAnimationFrame(() => {
 				frame = 0;
 				const now = placeOf(scroller);
 				if (now) report.current?.(now);
 			});
 		};
+		const observer = new ResizeObserver(() => {
+			if (held) hold();
+		});
 		const restore = () => {
-			const target = initial.current;
 			// The pages render a frame after they are laid out.
-			if (target && !restorePlace(scroller, target) && tries++ < 10) {
+			if (held && !hold() && tries++ < 10) {
 				frame = requestAnimationFrame(restore);
 				return;
 			}
-			initial.current = undefined;
 			frame = 0;
 			const now = placeOf(scroller);
 			if (now) report.current?.(now);
 			scroller.addEventListener("scroll", onScroll, { passive: true });
+			observer.observe(el);
 		};
 		frame = requestAnimationFrame(restore);
 		return () => {
 			cancelAnimationFrame(frame);
+			observer.disconnect();
 			scroller.removeEventListener("scroll", onScroll);
 		};
 	}, [root, ready]);

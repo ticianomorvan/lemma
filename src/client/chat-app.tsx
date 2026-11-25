@@ -81,12 +81,16 @@ export function ChatApp() {
 	// A course with no PDFs has nothing to read: it stays in Practice. Until
 	// this client picks a view, a course with PDFs opens in Read.
 	const readable = files === undefined || files.length > 0;
-	const view: View | undefined = !readable
-		? "practice"
-		: (chosenView ?? (files && "read"));
+	const view: View | undefined = readable
+		? (chosenView ?? (files && "read"))
+		: "practice";
+	/** Set by the open session: what it carries into Read when the view switches there. */
+	const toRead = useRef<() => void>(undefined);
 	const pickView = useCallback(
 		(next: View) => {
-			if (next === "practice" || readable) chooseView(next);
+			if (next === "read" && !readable) return;
+			if (next === "read") toRead.current?.();
+			chooseView(next);
 		},
 		[readable, chooseView],
 	);
@@ -177,11 +181,7 @@ export function ChatApp() {
 							view={view}
 							onView={pickView}
 							layout={layout}
-							noReading={
-								readable
-									? undefined
-									: `Copiá los PDFs del curso a ${meta?.course ?? ""}/materials/, en la carpeta de estudio.`
-							}
+							noPdfsIn={readable ? undefined : (meta?.course ?? "")}
 						/>
 					)}
 					<span className="flex-1" />
@@ -207,6 +207,7 @@ export function ChatApp() {
 							onMeta={setMeta}
 							view={view}
 							onView={pickView}
+							toRead={toRead}
 							files={files}
 							layout={layout}
 						/>
@@ -235,6 +236,7 @@ type SessionProps = {
 	/** Undefined until the course's materials are known. */
 	view?: View;
 	onView: (view: View) => void;
+	toRead: { current?: () => void };
 	/** Undefined until the server lists them. */
 	files?: Material[];
 	layout: Layout;
@@ -259,6 +261,7 @@ function Live({
 	onMeta,
 	view,
 	onView,
+	toRead,
 	files,
 	layout,
 }: SessionProps & { store: SessionStore }) {
@@ -313,24 +316,25 @@ function Live({
 	}, []);
 	const has = (path?: string) =>
 		!!path && !!files?.some((f) => f.path === path);
-	const carried =
-		view === "read" && cited && has(cited.path) ? cited : undefined;
-	const file =
-		files && openFile(files, carried?.path ?? chosenFile, state.view);
+	const file = files && openFile(files, chosenFile, state.view);
+	// Runs in the switch's own event, so Read mounts with it in one render.
 	useEffect(() => {
-		if (view !== "read" || !cited) return;
-		if (files?.some((f) => f.path === cited.path)) chooseFile(cited.path);
-		setCited(undefined);
-	}, [view, cited, files, chooseFile]);
-	// Written while rendering, before Read mounts (it may first suspend on its
-	// chunk): idempotent, and derived only from state.
-	if (carried) {
-		readMemory.current = {
-			file: carried.path,
-			place: drawerPlace.current,
-			chat: false,
+		toRead.current = () => {
+			if (!cited) return;
+			if (has(cited.path)) {
+				chooseFile(cited.path);
+				readMemory.current = {
+					file: cited.path,
+					place: drawerPlace.current,
+					chat: false,
+				};
+			}
+			setCited(undefined);
 		};
-	}
+		return () => {
+			toRead.current = undefined;
+		};
+	});
 
 	return (
 		<div className="relative h-full">
@@ -359,7 +363,8 @@ function Live({
 					onDrawerPlace={(place) => {
 						drawerPlace.current = place;
 					}}
-					onRead={cited && has(cited.path) ? () => onView("read") : undefined}
+					canRead={has}
+					onRead={() => onView("read")}
 				/>
 			) : null}
 			{state.connection === "offline" && (

@@ -12,20 +12,18 @@ import type { ThreadActions } from "./model.ts";
 const coarse = () =>
 	typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 
-/** A composer's text kept outside it, so it outlives the composer. */
+/** A composer's text, kept outside it so it outlives the composer. */
 export type ComposerDraft = { text: string; setText: (text: string) => void };
 
 /**
  * Composer state and keys: Enter sends (a newline on touch screens) and
  * Shift+Enter is a newline. Sending while Claude answers queues the message.
- * With `draft` the text lives there instead, so a session's views share it.
+ * The text lives in `draft`, so a session's views share it.
  */
 export function useComposer(
 	actions: Pick<ThreadActions, "send">,
-	draft?: ComposerDraft,
+	{ text, setText }: ComposerDraft,
 ) {
-	const own = useState("");
-	const [text, setText] = draft ? [draft.text, draft.setText] : own;
 	const ref = useRef<HTMLTextAreaElement>(null);
 	const canSend = text.trim().length > 0;
 	const submit = useCallback(() => {
@@ -96,13 +94,28 @@ export function useStickToBottom(
 		if (!el || !inner) return;
 		const cell = memory?.current?.cell;
 		const target = cell ? document.getElementById(cell) : null;
-		if (target && el.contains(target)) {
+		const offset = memory?.current?.offset ?? 0;
+		/** The restored cell, held at its offset while answers above it finish drawing, until the reader moves. */
+		let held = target && el.contains(target) ? target : null;
+		const hold = () => {
+			if (!held) return;
 			el.scrollTop +=
-				target.getBoundingClientRect().top -
+				held.getBoundingClientRect().top -
 				el.getBoundingClientRect().top -
-				(memory?.current?.offset ?? 0);
+				offset;
+		};
+		const release = () => {
+			held = null;
+		};
+		if (held) {
+			hold();
 			pinned.current = false;
-		} else el.scrollTop = el.scrollHeight;
+		} else {
+			el.scrollTop = el.scrollHeight;
+			setAtBottom(true);
+		}
+		const moves = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+		for (const m of moves) el.addEventListener(m, release, { passive: true });
 		let last = el.scrollTop;
 		let frame = 0;
 		const remember = () => {
@@ -121,12 +134,14 @@ export function useStickToBottom(
 		};
 		const observer = new ResizeObserver(() => {
 			if (pinned.current) el.scrollTop = el.scrollHeight;
+			else hold();
 		});
 		observer.observe(inner);
 		el.addEventListener("scroll", onScroll, { passive: true });
 		return () => {
 			observer.disconnect();
 			el.removeEventListener("scroll", onScroll);
+			for (const m of moves) el.removeEventListener(m, release);
 			cancelAnimationFrame(frame);
 		};
 	}, [scroller, content]);
