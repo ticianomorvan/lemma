@@ -7,7 +7,7 @@
  * POST, so whatever fetches a link without running it (a chat app's preview,
  * a prefetch) can't spend it, and a prerendered page waits until it shows.
  */
-import { KeyRound, Link2Off, WifiOff } from "lucide-react";
+import { KeyRound, Link2Off, PowerOff, WifiOff } from "lucide-react";
 import { Button, buttonVariants } from "#components/ui/button.tsx";
 import { APP_NAME } from "../shared/app.ts";
 import type { RedeemResponse } from "../shared/protocol.ts";
@@ -62,6 +62,17 @@ const COPY = {
 		title: "No se pudo vincular",
 		text: `${APP_NAME} no respondió. Revisá que este dispositivo esté en la misma red Wi-Fi que la computadora y que ${APP_NAME} siga abierto. El enlace todavía sirve.`,
 	},
+	stopped: {
+		Icon: PowerOff,
+		title: `${APP_NAME} no está corriendo`,
+		text: (
+			<>
+				Iniciá {APP_NAME} en la computadora con{" "}
+				<code className="font-mono text-[13px]">bun run start</code>. Esta
+				ventana se reconecta sola en cuanto responda.
+			</>
+		),
+	},
 };
 
 export function PairingScreen({
@@ -70,10 +81,11 @@ export function PairingScreen({
 }: {
 	/**
 	 * `expired`: a pairing link that was used or timed out. `offline`: one
-	 * whose redemption never reached the server.
+	 * whose redemption never reached the server. `stopped`: the app loaded
+	 * (from the service worker's cache) but the server isn't answering.
 	 */
 	kind: keyof typeof COPY;
-	/** For `unpaired` and `offline`: try again. */
+	/** For `unpaired`, `offline` and `stopped`: try again. */
 	onRetry?: () => void;
 }) {
 	const { Icon, title, text } = COPY[kind];
@@ -97,7 +109,7 @@ export function PairingScreen({
 						{text}
 					</p>
 				</div>
-				{kind !== "offline" && (
+				{(kind === "unpaired" || kind === "expired") && (
 					<ol className="grid list-decimal gap-2 pl-5 text-sm leading-relaxed text-pretty marker:text-muted-foreground">
 						<li>
 							Abrí el enlace que {APP_NAME} muestra en la terminal al iniciar
@@ -120,7 +132,7 @@ export function PairingScreen({
 						onClick={onRetry}
 						className="h-10 transition-transform duration-150 ease-out active:scale-[0.97]"
 					>
-						{kind === "offline" ? "Reintentar" : "Ya lo abrí, reintentar"}
+						{kind === "unpaired" ? "Ya lo abrí, reintentar" : "Reintentar"}
 					</Button>
 				) : (
 					<a

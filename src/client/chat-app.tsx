@@ -42,6 +42,7 @@ import { Title, titleText } from "./markdown/lazy.tsx";
 import { isPairingPath, PairingScreen, redeemLink } from "./pairing.tsx";
 import { PracticeView } from "./practice/practice-view.tsx";
 import { usePrint } from "./print/use-print.tsx";
+import { reconnected } from "./pwa/events.ts";
 import type { PagePlace } from "./read/anchors.ts";
 import type { Material, ReadMemory } from "./read/read-view.tsx";
 import { SessionsMenu } from "./sessions-menu.tsx";
@@ -72,7 +73,14 @@ export function ChatApp() {
 	const [id, setId] = useState(sessionFromPath);
 	const [meta, setMeta] = useState<SessionMeta>();
 	const [screen, setScreen] = useState<
-		"app" | "setup" | "failed" | "unpaired" | "pairing" | "expired" | "offline"
+		| "app"
+		| "setup"
+		| "failed"
+		| "unpaired"
+		| "pairing"
+		| "expired"
+		| "offline"
+		| "stopped"
 	>(isPairingPath() ? "pairing" : "app");
 	const unpair = useCallback(() => {
 		history.replaceState(null, "", "/");
@@ -135,13 +143,34 @@ export function ChatApp() {
 				if (!cancelled) open(target, setId, "replace");
 			} catch (error) {
 				if (cancelled) return;
-				setScreen(error instanceof Unpaired ? "unpaired" : "failed");
+				setScreen(
+					error instanceof Unpaired
+						? "unpaired"
+						: error instanceof TypeError
+							? // fetch rejects only when nothing answered: the server is down.
+								"stopped"
+							: "failed",
+				);
 			}
 		})();
 		return () => {
 			cancelled = true;
 		};
 	}, [id, attempt]);
+
+	// While the server is down, ask every 2 s; the first answer of any kind
+	// (even a 403) starts the app over.
+	useEffect(() => {
+		if (screen !== "stopped") return;
+		const timer = setInterval(async () => {
+			const res = await fetch("/api/state").catch(() => null);
+			if (!res) return;
+			clearInterval(timer);
+			reconnected();
+			retry();
+		}, 2000);
+		return () => clearInterval(timer);
+	}, [screen, retry]);
 
 	useEffect(() => {
 		const onPop = () => setId(sessionFromPath());
@@ -172,6 +201,9 @@ export function ChatApp() {
 	}
 	if (screen === "unpaired") {
 		return <PairingScreen kind="unpaired" onRetry={retry} />;
+	}
+	if (screen === "stopped") {
+		return <PairingScreen kind="stopped" onRetry={retry} />;
 	}
 
 	return (

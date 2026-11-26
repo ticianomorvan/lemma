@@ -283,5 +283,7 @@ test("the app's first load stays small: diagram renderers load on demand", () =>
 	// 941 kB before step 6 split the renderers, KaTeX and Markdown out;
 	// 557 kB after step 10. Step 11's mode cards add 5 kB (its menu, Base
 	// UI's Menu, is a lazy chunk). Step 12's print copy adds 5 kB (568 kB).
+	// Step 13 adds 0.5 kB (569 kB): the "not running" screen and the call that
+	// loads the service worker's own chunk after load.
 	expect(bytes).toBeLessThan(570_000);
 });

@@ -14,3 +14,17 @@ createRoot(root).render(
 		<App />
 	</StrictMode>,
 );
+
+// The installable app's service worker, from its own chunk once the page has
+// loaded, so the first load stays the same. Only secure contexts have service
+// workers: the desktop on 127.0.0.1 or localhost, never a phone over plain
+// LAN HTTP, which gets no worker and no install. Dev has none.
+if (
+	import.meta.env.PROD &&
+	window.isSecureContext &&
+	"serviceWorker" in navigator
+) {
+	window.addEventListener("load", () => void import("./pwa/register.ts"), {
+		once: true,
+	});
+}
