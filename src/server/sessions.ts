@@ -43,7 +43,13 @@ import {
 	isCourseName,
 	sessionsDir,
 } from "./folder/layout.ts";
-import { listModes, modeMessage, readSkill } from "./modes/modes.ts";
+import {
+	type KnownMode,
+	listModes,
+	modeMessage,
+	readSkill,
+	UNKNOWN,
+} from "./modes/modes.ts";
 import { type PhotoType, photoName, photoType } from "./photos.ts";
 import {
 	appendEntry,
@@ -83,10 +89,10 @@ type LiveSession = {
 	 */
 	agentHash?: string;
 	/**
-	 * The mode the live agent was last told about: null for none, undefined
-	 * when unknown (a resumed agent). A message after a change carries it.
+	 * The mode the live agent was told about (`modeMessage`). A message after
+	 * a change carries the new one.
 	 */
-	agentMode?: string | null;
+	agentMode: KnownMode;
 	/** An interrupt the agent hasn't acknowledged yet. */
 	interrupting?: Promise<void>;
 	/** A turn stopped before its agent existed; interrupted once it does. */
@@ -294,8 +300,10 @@ export class Sessions {
 		if (!s) return undefined;
 		const patch: Partial<TranscriptMeta> = {};
 		if (body.title !== undefined) patch.title = body.title.trim();
-		if (body.mode) this.checkMode(body.mode);
-		if (body.mode !== undefined) patch.mode = body.mode ?? undefined;
+		if (body.mode !== undefined) {
+			if (body.mode !== null) this.checkMode(body.mode);
+			patch.mode = body.mode ?? undefined;
+		}
 		const current = read(this.folder, s.path);
 		write(this.folder, s.path, {
 			meta: { ...current.meta, ...patch },
@@ -367,7 +375,7 @@ export class Sessions {
 		} catch {
 			return undefined;
 		}
-		const s: LiveSession = { path, view, seq: 0 };
+		const s: LiveSession = { path, view, seq: 0, agentMode: UNKNOWN };
 		this.live.set(id, s);
 		return s;
 	}
@@ -454,20 +462,19 @@ export class Sessions {
 					if (!current()) return agent.close();
 					s.agent = agent;
 					s.agentHash = asked;
-					s.agentMode = agent.resumed ? undefined : null;
+					s.agentMode = agent.resumed ? UNKNOWN : null;
 					void this.run(id, s, agent);
 				}
 				// The mode is read as this message goes, so a change made during
 				// the previous turn applies to this one.
-				const mode = s.view.meta.mode;
-				const steer = modeMessage(this.folder, mode, s.agentMode);
-				if (steer !== null || mode === undefined) s.agentMode = mode ?? null;
+				const steer = modeMessage(this.folder, s.view.meta.mode, s.agentMode);
+				s.agentMode = steer.known;
 				// An agent seeded with the file has its notes already.
 				agent.push(
 					agentMessage(
 						{ ...user, attachments: photos },
 						fresh && !agent.resumed ? [] : notes,
-						steer,
+						steer.note,
 					),
 					images,
 				);
@@ -591,7 +598,7 @@ export class Sessions {
 		const agent = s.agent;
 		s.agent = undefined;
 		s.agentHash = undefined;
-		s.agentMode = undefined;
+		s.agentMode = UNKNOWN;
 		agent?.close();
 	}
 

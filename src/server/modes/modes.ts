@@ -92,8 +92,12 @@ export function readSkill(
 			if (typeof raw?.description === "string") {
 				description = raw.description.trim() || undefined;
 			}
-		} catch {
+		} catch (error) {
 			// A broken header: the body still steers Claude.
+			console.warn(
+				`${skillFile(mode)}: its front matter does not parse:`,
+				error,
+			);
 		}
 	}
 	const body = (match ? text.slice(match[0].length) : text).trim();
@@ -101,32 +105,41 @@ export function readSkill(
 }
 
 /**
- * What Claude gets ahead of a message when the session's mode changed since
- * the agent's last message (or the agent is new): the mode's instructions, or
- * a note that the mode is off. Null when there is nothing to say.
+ * What a live agent was told about the mode: the `<mode>` note it got last,
+ * `null` for no mode (a fresh agent, or one told the mode is off), or
+ * `UNKNOWN` for a resumed agent, whose saved history may hold any mode.
+ */
+export const UNKNOWN = Symbol("unknown mode");
+export type KnownMode = string | null | typeof UNKNOWN;
+
+const OFF = [
+	"<mode>",
+	"The student turned the study mode off. From now on answer normally; stop following any earlier mode's instructions.",
+	"</mode>",
+].join("\n");
+
+/**
+ * What Claude gets ahead of a message so that it follows the session's
+ * `mode`, given what it was told (`known`): the mode's instructions when they
+ * differ from the last ones it got (another mode, or its SKILL.md edited), a
+ * note that the mode is off, or nothing (`note: null`). A mode whose SKILL.md
+ * is gone counts as off. `known` is what the agent knows once it is sent.
  */
 export function modeMessage(
 	folder: Folder,
 	mode: string | undefined,
-	known: string | null | undefined,
-): string | null {
-	if (mode === undefined) {
-		// `known` undefined: a resumed agent may still follow an old mode.
-		if (known === null) return null;
-		return [
-			"<mode>",
-			"The student turned the study mode off. From now on answer normally; stop following any earlier mode's instructions.",
-			"</mode>",
-		].join("\n");
+	known: KnownMode,
+): { note: string | null; known: KnownMode } {
+	const skill = mode === undefined ? null : readSkill(folder, mode);
+	if (!mode || !skill) {
+		return known === null ? { note: null, known } : { note: OFF, known: null };
 	}
-	if (mode === known) return null;
-	const skill = readSkill(folder, mode);
-	if (!skill) return null;
-	return [
+	const note = [
 		`<mode name="${mode}" label="${skill.label.replace(/"/g, "'")}">`,
 		"The student picked this study mode for the session. Follow its instructions from now on, until a later <mode> note changes it. They come from the student's study folder (.claude/skills/), and they apply on top of the Lemma conventions.",
 		"",
 		skill.body.replace(/<(\/?mode)/gi, "&lt;$1"),
 		"</mode>",
 	].join("\n");
+	return note === known ? { note: null, known } : { note, known: note };
 }

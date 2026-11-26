@@ -207,3 +207,31 @@ test("an agent closed for idling resumes and is told the mode again", async () =
 	expect(driver.started[1]?.resumed).toBe(true);
 	expect(driver.pushed[1]).toStartWith('<mode name="explain"');
 });
+
+test("an edited SKILL.md reaches the live agent, and a deleted one turns the mode off", async () => {
+	const { server, api, id, dir, driver } = await serve({ streams: ["math"] });
+	await api(`/api/sessions/${id}`, { mode: "review" }, "PATCH");
+	const a = await Client.subscribe(server, id);
+	await ask(api, id, "Uno");
+	await turnEnds(1)(a);
+	expect(driver.pushed[0]).toStartWith('<mode name="review"');
+
+	await writeFile(
+		skill(dir, "review"),
+		"---\nname: review\nlabel: Revisar\n---\n\nSolo una pista por vez.\n",
+	);
+	await ask(api, id, "Dos");
+	await turnEnds(2)(a);
+	expect(driver.pushed[1]).toContain("Solo una pista por vez.");
+	await ask(api, id, "Tres");
+	await turnEnds(3)(a);
+	expect(driver.pushed[2]).toBe("Tres");
+
+	await rm(join(dir, ".claude", "skills", "review"), { recursive: true });
+	await ask(api, id, "Cuatro");
+	await turnEnds(4)(a);
+	expect(driver.pushed[3]).toContain("turned the study mode off");
+	await ask(api, id, "Cinco");
+	await turnEnds(5)(a);
+	expect(driver.pushed[4]).toBe("Cinco");
+});

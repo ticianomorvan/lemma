@@ -1,10 +1,8 @@
 /**
  * The study modes the folder offers (`GET /api/state` → `modes`), and the
- * session's mode with a way to change it (`PATCH /api/sessions/:id`). The
- * change shows at once; the server's `meta` event, which every client gets,
- * confirms it.
+ * session's mode with a way to change it (`PATCH /api/sessions/:id`).
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type {
 	Mode,
 	SessionMeta,
@@ -43,31 +41,22 @@ export function useModes(): Mode[] {
 }
 
 /**
- * The session's mode as this client should show it: the one just picked
- * until the server confirms it (or refuses it), else the front matter's.
+ * The session's mode, from its front matter, and a way to change it. The
+ * change shows when the server's `meta` event comes back, on every client
+ * at once (a local round trip). A refused change leaves it as it was.
  */
 export function useSessionMode(meta: SessionMeta | undefined) {
-	const [picked, setPicked] = useState<{ mode: string | null }>();
-	const confirmed = meta?.mode ?? null;
-	useEffect(() => {
-		if (picked && picked.mode === confirmed) setPicked(undefined);
-	}, [picked, confirmed]);
 	const id = meta?.id;
 	const choose = useCallback(
 		(mode: string | null) => {
 			if (!id) return;
-			setPicked({ mode });
 			void fetch(`/api/sessions/${id}`, {
 				method: "PATCH",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ mode }),
-			})
-				.then((res) => {
-					if (!res.ok) setPicked(undefined);
-				})
-				.catch(() => setPicked(undefined));
+			}).catch(() => {});
 		},
 		[id],
 	);
-	return { mode: picked ? picked.mode : confirmed, choose };
+	return { mode: meta?.mode ?? null, choose };
 }
