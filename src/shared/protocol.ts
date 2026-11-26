@@ -4,7 +4,7 @@
  * here is a protocol change. See docs/architecture.md → Client protocol.
  */
 import { z } from "zod";
-import { MAX_TYPST_SOURCE } from "./blocks.ts";
+import { MAX_TYPST_SOURCE } from "./typst.ts";
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 

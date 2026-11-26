@@ -1,6 +1,5 @@
 import { extname, join, resolve } from "node:path";
 import { type ZodType, z } from "zod";
-import { isTypstFile } from "../shared/blocks.ts";
 import {
 	type Attachment,
 	ClientMessage,
@@ -24,6 +23,7 @@ import {
 	TypstSvgBody,
 	type TypstSvgResponse,
 } from "../shared/protocol.ts";
+import { isTypstFile } from "../shared/typst.ts";
 import type { AgentDriver } from "./agent/driver.ts";
 import { type Auth, CODE_TTL_MS } from "./auth/auth.ts";
 import { chooseStudyFolder } from "./config.ts";

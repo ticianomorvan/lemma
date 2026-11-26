@@ -23,8 +23,8 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { isTypstFile } from "../../shared/blocks.ts";
 import type { Anchor, MaterialsResponse } from "../../shared/protocol.ts";
+import { isTypstFile } from "../../shared/typst.ts";
 import type { Layout } from "../layout.ts";
 import type { SessionState, SessionStore } from "../store.ts";
 import type { ComposerDraft } from "../thread/hooks.ts";

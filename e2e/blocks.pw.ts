@@ -329,7 +329,8 @@ test("the app's first load stays small: diagram renderers load on demand", () =>
 	);
 	// 941 kB before step 6 split the renderers, KaTeX and Markdown out;
 	// 557 kB after step 10. Step 11's mode cards add 5 kB (its menu, Base
-	// UI's Menu, is a lazy chunk). Step 12 adds no compiler: Typst runs on
-	// the server, and the export menu is a lazy chunk.
+	// UI's Menu, is a lazy chunk). Step 12 adds no compiler (Typst runs on
+	// the server): 562.6 → 564.7 kB, the cost of the lazy export menu, whose
+	// sharing Base UI with the header makes the bundler split a chunk out.
 	expect(bytes).toBeLessThan(570_000);
 });

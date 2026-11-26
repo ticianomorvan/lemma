@@ -3,10 +3,8 @@
  * pipeline): the label each one's card shows, and the longest source it
  * accepts (block.tsx checks it before rendering).
  */
-import {
-	type BLOCK_KIND_NAMES,
-	MAX_TYPST_SOURCE,
-} from "../../shared/blocks.ts";
+import type { BLOCK_KIND_NAMES } from "../../shared/blocks.ts";
+import { MAX_TYPST_SOURCE } from "../../shared/typst.ts";
 
 export const BLOCK_KINDS = {
 	dot: { label: "Grafo", maxSource: 20_000 },

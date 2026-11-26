@@ -28,8 +28,8 @@ import {
 } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { cn } from "#lib/utils.ts";
-import { isTypstFile } from "../../shared/blocks.ts";
 import type { Anchor } from "../../shared/protocol.ts";
+import { isTypstFile } from "../../shared/typst.ts";
 import {
 	anchorRange,
 	layers,

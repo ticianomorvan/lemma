@@ -10,7 +10,7 @@
  * so the limits, not the source, decide how long the server works on it.
  */
 
-import { MAX_TYPST_SOURCE } from "../../shared/blocks.ts";
+import { MAX_TYPST_SOURCE } from "../../shared/typst.ts";
 
 /** The one package a document may import (exports only); `worker.ts` serves it. */
 export const MITEX = { namespace: "preview", name: "mitex", version: "0.2.7" };

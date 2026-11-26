@@ -30,9 +30,10 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import { isBlockKindName, MAX_TYPST_SOURCE } from "../../shared/blocks.ts";
+import { isBlockKindName } from "../../shared/blocks.ts";
 import { normalizeMath } from "../../shared/normalize-math.ts";
 import type { Anchor } from "../../shared/protocol.ts";
+import { MAX_TYPST_SOURCE } from "../../shared/typst.ts";
 import type { Folder } from "../folder/folder.ts";
 import { exportsDir } from "../folder/layout.ts";
 import {
