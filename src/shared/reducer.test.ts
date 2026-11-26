@@ -130,3 +130,22 @@ test("a meta event replaces the session's title and mode", () => {
 	expect(next.meta).toEqual({ ...meta, title: "Bernoulli", mode: "review" });
 	expect(next.turns).toBe(view.turns);
 });
+
+test("waiting photos: listed by the server, taken by the message that sends them", () => {
+	const a = { id: "001-photo.jpg", path: "c/sessions/s/001-photo.jpg" };
+	const b = { id: "002-photo.jpg", path: "c/sessions/s/002-photo.jpg" };
+	const view = reduce({ ...emptyView(meta) }, [
+		{ type: "attachments", pending: [a, b] },
+		{
+			...(user("t1") as Extract<SessionEvent, { type: "user_message" }>),
+			attachments: [a],
+		},
+	]);
+	expect(view.attachments).toEqual([b]);
+	expect(view.queue[0]?.attachments ?? view.inflight?.user.attachments).toEqual(
+		[a],
+	);
+	expect(apply(view, { type: "attachments", pending: [] }).attachments).toEqual(
+		[],
+	);
+});

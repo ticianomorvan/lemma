@@ -1,7 +1,7 @@
 /**
  * The header's device list: every paired browser, unpairing one (two clicks),
  * and a one-time link to pair another. It reads the list fresh each time it
- * opens. A QR code for the phone comes with LAN mode (plan step 10).
+ * opens. A phone pairs from the composer's QR code instead (photos/phone-popover.tsx), over the LAN; it shows here marked "por Wi-Fi".
  */
 import { Check, Copy, MonitorSmartphone } from "lucide-react";
 import { useState } from "react";
@@ -11,7 +11,9 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "#components/ui/popover.tsx";
+import { cn } from "#lib/utils.ts";
 import type { DevicesResponse, PairResponse } from "../shared/protocol.ts";
+import { useLayout } from "./layout.ts";
 import { isUnpaired } from "./unpaired.ts";
 
 export function DevicesMenu({ onUnpaired }: { onUnpaired: () => void }) {
@@ -21,6 +23,7 @@ export function DevicesMenu({ onUnpaired }: { onUnpaired: () => void }) {
 	const [link, setLink] = useState<PairResponse>();
 	const [copied, setCopied] = useState(false);
 	const [error, setError] = useState<string>();
+	const phone = useLayout() === "phone";
 
 	const load = async () => {
 		const res = await fetch("/api/devices");
@@ -74,7 +77,7 @@ export function DevicesMenu({ onUnpaired }: { onUnpaired: () => void }) {
 		>
 			<PopoverTrigger className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted-foreground transition-[transform,color,background-color] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] aria-expanded:bg-muted aria-expanded:text-foreground">
 				<MonitorSmartphone aria-hidden className="size-3.5" />
-				<span className="max-sm:sr-only">Dispositivos</span>
+				<span className={cn(phone && "sr-only")}>Dispositivos</span>
 			</PopoverTrigger>
 			<PopoverContent
 				align="end"
@@ -97,7 +100,8 @@ export function DevicesMenu({ onUnpaired }: { onUnpaired: () => void }) {
 										{d.name}
 									</span>
 									<span className="text-xs text-muted-foreground">
-										{mine ? "Este navegador · " : ""}desde el{" "}
+										{mine ? "Este navegador · " : ""}
+										{d.lan ? "Por Wi-Fi · " : ""}desde el{" "}
 										<time dateTime={d.created}>{shortDate(d.created)}</time>
 									</span>
 								</span>

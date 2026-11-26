@@ -47,6 +47,8 @@
  *   either callout's first line are escaped like headings.
  * - Session files always sit at `<course>/sessions/<file>.md`, so anchor links
  *   are `../../<root-relative path>` and open in an editor.
+ * - A question's photos close it, one Markdown image per line:
+ *   `![Foto](../../<course>/sessions/<file>/001-photo.jpg)`.
  * - Entry text is trimmed when written.
  */
 import { createHash } from "node:crypto";
@@ -83,7 +85,13 @@ export type Part =
 	  };
 
 export type Entry =
-	| { kind: "user"; text: string; anchor?: Anchor }
+	| {
+			kind: "user";
+			text: string;
+			anchor?: Anchor;
+			/** Root-relative paths of the photos it sent. */
+			attachments?: string[];
+	  }
 	| { kind: "answer"; parts: Part[]; reason: TurnEndReason }
 	| { kind: "note"; anchor: Anchor; text?: string };
 
@@ -106,6 +114,7 @@ const isMarker = (line: string) =>
 	line.startsWith("> [!thinking]") ||
 	line.startsWith("> [!tool]");
 const LINK = "../../";
+const IMAGE = /^!\[Foto\]\(\.\.\/\.\.\/(\S+)\)$/;
 
 // ── Whole files ─────────────────────────────────────────────────────────────
 
@@ -155,8 +164,12 @@ export function bodyHash(body: string): string {
 export function formatEntry(entry: Entry): string {
 	switch (entry.kind) {
 		case "user": {
-			const quote = entry.anchor ? `${anchorQuote(entry.anchor)}\n\n` : "";
-			return section(HEADINGS.user, quote + escapeHeadings(entry.text.trim()));
+			const parts = [
+				...(entry.anchor ? [anchorQuote(entry.anchor)] : []),
+				escapeHeadings(entry.text.trim()),
+				(entry.attachments ?? []).map(imageLine).join("\n"),
+			];
+			return section(HEADINGS.user, parts.filter(Boolean).join("\n\n"));
 		}
 		case "answer":
 			return section(
@@ -326,10 +339,25 @@ function parseEntry(heading: string, lines: string[]): Entry | null {
 	switch (heading) {
 		case HEADINGS.user: {
 			const anchor = readAnchor(lines);
-			const text = unescapeHeadings(trimLines(lines.slice(anchor?.lines ?? 0)));
-			return anchor
-				? { kind: "user", text, anchor: anchor.anchor }
-				: { kind: "user", text };
+			const rest = lines.slice(anchor?.lines ?? 0);
+			// The photos: the image lines that close the entry.
+			let end = rest.length;
+			while (end > 0 && IMAGE.test(rest[end - 1] ?? "")) end -= 1;
+			const attachments = rest.slice(end).flatMap((line) => {
+				const path = IMAGE.exec(line)?.[1];
+				try {
+					return path ? [decodeURIComponent(path)] : [];
+				} catch {
+					return [];
+				}
+			});
+			const text = unescapeHeadings(trimLines(rest.slice(0, end)));
+			return {
+				kind: "user",
+				text,
+				...(anchor ? { anchor: anchor.anchor } : {}),
+				...(attachments.length > 0 ? { attachments } : {}),
+			};
 		}
 		case HEADINGS.completed:
 			return { kind: "answer", parts: parseParts(lines), reason: "completed" };
@@ -374,7 +402,17 @@ function anchorQuote(anchor: Anchor) {
 
 function anchorLink({ path, page }: Anchor) {
 	const name = path.split("/").pop() ?? path;
-	const href = (LINK + path)
+	const href = linkPath(path);
+	return `[${name.replace(/[[\]]/g, "\\$&")}, p. ${page}](${href}#page=${page})`;
+}
+
+function imageLine(path: string) {
+	return `![Foto](${linkPath(path)})`;
+}
+
+/** `../../` and the path, each segment encoded (parentheses too, for Markdown). */
+function linkPath(path: string) {
+	return (LINK + path)
 		.split("/")
 		.map((part) =>
 			encodeURIComponent(part).replace(/[()]/g, (c) =>
@@ -382,7 +420,6 @@ function anchorLink({ path, page }: Anchor) {
 			),
 		)
 		.join("/");
-	return `[${name.replace(/[[\]]/g, "\\$&")}, p. ${page}](${href}#page=${page})`;
 }
 
 function parseLink(text: string): { path: string; page: number } | null {

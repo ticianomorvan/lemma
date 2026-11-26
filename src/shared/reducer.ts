@@ -13,7 +13,14 @@ import type {
 } from "./protocol.ts";
 
 export function emptyView(meta: SessionMeta): SessionView {
-	return { status: "idle", meta, turns: [], queue: [], notes: [] };
+	return {
+		status: "idle",
+		meta,
+		turns: [],
+		queue: [],
+		notes: [],
+		attachments: [],
+	};
 }
 
 export function reduce(
@@ -29,8 +36,18 @@ export function apply(view: SessionView, e: SessionEvent): SessionView {
 	switch (e.type) {
 		case "user_message": {
 			const { type: _, queued: __, ...user } = e;
-			return { ...view, queue: [...view.queue, user] };
+			const sent = new Set(user.attachments.map((a) => a.id));
+			return {
+				...view,
+				queue: [...view.queue, user],
+				attachments:
+					sent.size === 0
+						? view.attachments
+						: view.attachments.filter((a) => !sent.has(a.id)),
+			};
 		}
+		case "attachments":
+			return { ...view, attachments: e.pending };
 		case "note": {
 			const { type: _, ...note } = e;
 			return { ...view, notes: [...view.notes, note] };

@@ -43,15 +43,22 @@ export class SdkDriver implements AgentDriver {
 		return {
 			sdkSessionId,
 			resumed,
-			push(text) {
+			push(text, images = []) {
 				// The seed goes with the first message, so it is part of the saved
 				// history a later resume brings back (a system prompt wouldn't be).
-				const content = pending
-					? [
-							{ type: "text" as const, text: pending },
-							{ type: "text" as const, text },
-						]
-					: text;
+				const blocks = [
+					...(pending ? [{ type: "text" as const, text: pending }] : []),
+					...images.map((image) => ({
+						type: "image" as const,
+						source: {
+							type: "base64" as const,
+							media_type: image.mediaType,
+							data: image.data,
+						},
+					})),
+					...(text ? [{ type: "text" as const, text }] : []),
+				];
+				const content = blocks.length === 1 && !pending && text ? text : blocks;
 				pending = undefined;
 				input.push({
 					type: "user",

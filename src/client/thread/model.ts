@@ -15,10 +15,17 @@ export type ThreadItem =
 
 /** What the thread can ask the app to do. */
 export type ThreadActions = {
-	send: (text: string) => void;
+	/** Sends a message with the waiting photos it was written beside. */
+	send: (text: string, attachmentIds?: string[]) => void;
 	stop: () => void;
 	/** Drops a failed outgoing message and returns its text. */
 	discard: (clientMsgId: string) => string;
+	/** Uploads photos to the session (downscaled first). */
+	upload: (files: File[]) => void;
+	/** Drops a waiting photo, for every client. */
+	drop: (attachmentId: string) => void;
+	/** Forgets a failed upload. */
+	dismissUpload: (key: string) => void;
 };
 
 export type TurnState = "streaming" | "completed" | "interrupted" | "error";

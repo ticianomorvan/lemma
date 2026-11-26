@@ -68,7 +68,7 @@ study/
   <course>/materials/       PDFs, .tex, .typ, .md from the course
   <course>/notes/           notes Claude or the user writes (.md or .typ)
   <course>/sessions/        one Markdown transcript per session, plus a front-matter `sdk_session_id`
-  inbox/                    phone photos land here, then move to the session's course
+  inbox/                    phone photos sent while no session is open
 ```
 - A session transcript is the source for the UI's history.
 - Math stays as LaTeX source in the Markdown, so any editor shows it.
@@ -111,7 +111,7 @@ study/
 **Phone handoff.**
 - **Pairing.** The desktop shows a QR code for `http://<lan-ip>:<port>/pair/<one-time code>`. Opening it gives the phone a long-lived device token, stored in a cookie. The desktop can list and revoke paired devices.
 - **Capture.** The phone's camera button is an `<input type=file accept=image/* capture=environment>`. It uploads each photo immediately and offers "take another".
-- **Delivery.** The server saves the photo to `inbox/` and attaches it to whichever session the phone has open. Every client watching that session sees it arrive.
+- **Delivery.** The server saves the photo in the folder of whichever session the phone has open (in `inbox/` when none is), where it waits for that session's next message. Every client watching that session sees it arrive.
 - No HTTPS is needed, because `capture` does not need a secure context. This is unverified on iOS, so slice 5 starts by testing it.
 - Tailscale Serve is the documented option for off-LAN use.
 - Claude reads the handwriting directly. Dedicated OCR (Mathpix) only if a test on 20 real photos shows Claude failing.

@@ -6,6 +6,7 @@ import { SdkDriver } from "./agent/sdk.ts";
 import { Auth } from "./auth/auth.ts";
 import { configDir, readConfig, saveConfig } from "./config.ts";
 import { startServer } from "./http.ts";
+import { lanAddress } from "./lan.ts";
 
 const production = process.env.NODE_ENV === "production";
 /**
@@ -36,6 +37,8 @@ const server = await startServer({
 	auth,
 	// Nobody is left to ask for a link: print one (without opening a browser).
 	onNoDevices: () => pairDesktop({ open: false }),
+	// `LEMMA_LAN_ADDRESS` picks the address (tests use `::1`).
+	lanAddress: () => process.env.LEMMA_LAN_ADDRESS || lanAddress(),
 });
 console.log(
 	production

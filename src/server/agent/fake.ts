@@ -4,6 +4,7 @@ import { channel } from "./channel.ts";
 import type {
 	AgentDriver,
 	AgentEvent,
+	AgentImage,
 	AgentSession,
 	AgentStartOptions,
 } from "./driver.ts";
@@ -48,6 +49,8 @@ export class FakeDriver implements AgentDriver {
 	readonly started: (AgentStartOptions &
 		Pick<AgentSession, "sdkSessionId" | "resumed">)[] = [];
 	readonly pushed: string[] = [];
+	/** The photos each push carried, by push. */
+	readonly pushedImages: AgentImage[][] = [];
 	/** SDK session ids with a finished turn: the ones `start` can resume. */
 	readonly saved = new Set<string>();
 	private readonly interruptedResult = loadStream("interrupt").find(
@@ -71,6 +74,7 @@ export class FakeDriver implements AgentDriver {
 		const { streams, pace, pick } = this.options;
 		const interruptedResult = this.interruptedResult;
 		const pushed = this.pushed;
+		const pushedImages = this.pushedImages;
 		const turns = channel<{ turn: number; name: string }>();
 		// Turns are numbered across the driver. An interrupt is for this
 		// session's latest push: a session pushes again only after `turn_end`.
@@ -101,8 +105,9 @@ export class FakeDriver implements AgentDriver {
 		return {
 			sdkSessionId,
 			resumed,
-			push(text) {
+			push(text, images = []) {
 				const turn = pushed.push(text) - 1;
+				pushedImages[turn] = images;
 				latest = turn;
 				const name = pick?.(text) ?? streams[turn % streams.length];
 				if (name === undefined) throw new Error("FakeDriver has no streams");

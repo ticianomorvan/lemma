@@ -12,7 +12,9 @@
  *   otherwise it starts fresh, seeded with the transcript.
  * - An agent idle for `idleMs` is closed; its session stays loaded.
  */
+import { basename, extname } from "node:path";
 import type {
+	Attachment,
 	Block,
 	CreateSessionBody,
 	Note,
@@ -32,9 +34,14 @@ import type {
 	UserMessage,
 } from "../shared/protocol.ts";
 import { apply, emptyView } from "../shared/reducer.ts";
-import type { AgentDriver, AgentSession } from "./agent/driver.ts";
+import type { AgentDriver, AgentImage, AgentSession } from "./agent/driver.ts";
 import type { Folder, FolderChange } from "./folder/folder.ts";
-import { isCourse, isCourseName, sessionsDir } from "./folder/layout.ts";
+import {
+	attachmentsDir,
+	isCourse,
+	isCourseName,
+	sessionsDir,
+} from "./folder/layout.ts";
 import {
 	appendEntry,
 	bodyHash,
@@ -175,9 +182,16 @@ export class Sessions {
 		if (!s) return undefined;
 		const turnId = crypto.randomUUID();
 		const queued = s.view.status === "running" || s.view.queue.length > 0;
+		// Only photos still waiting: another message may have taken one already.
+		const wanted = new Set(body.attachmentIds ?? []);
+		const attachments = s.view.attachments.filter((a) => wanted.has(a.id));
+		if (!body.text.trim() && attachments.length === 0) {
+			throw new BadRequest("those photos were already sent");
+		}
 		// The question itself is written when its turn starts, so each answer
 		// follows its own question in the file even when messages queue up.
-		if (!s.view.meta.title) this.update(id, { title: titleFrom(body.text) });
+		const title = titleFrom(body.text) || (attachments.length ? "Foto" : "");
+		if (!s.view.meta.title && title) this.update(id, { title });
 		this.emit(id, s, {
 			type: "user_message",
 			turnId,
@@ -185,7 +199,7 @@ export class Sessions {
 			from,
 			text: body.text,
 			...(body.anchor === undefined ? {} : { anchor: body.anchor }),
-			attachments: body.attachmentIds ?? [],
+			attachments,
 			queued,
 		});
 		this.next(id, s);
@@ -220,6 +234,44 @@ export class Sessions {
 		if (s.agent && s.agentHash === was) s.agentHash = now;
 		this.emit(id, s, { type: "note", ...note });
 		return { id: note.id };
+	}
+
+	/**
+	 * Saves a photo in the session's attachments folder (next to its `.md`).
+	 * It waits in the view, on every client, until a message takes it.
+	 */
+	attach(
+		id: string,
+		bytes: Uint8Array,
+		type: PhotoType,
+	): Attachment | undefined {
+		const s = this.load(id);
+		if (!s) return undefined;
+		const path = this.folder.saveAttachment(
+			attachmentsDir(s.path),
+			bytes,
+			`photo.${PHOTO_EXTENSIONS[type]}`,
+		);
+		const attachment = { id: basename(path), path };
+		this.emit(id, s, {
+			type: "attachments",
+			pending: [...s.view.attachments, attachment],
+		});
+		return attachment;
+	}
+
+	/** Drops a waiting photo and deletes its file. False if it isn't waiting. */
+	detach(id: string, attachmentId: string): boolean | undefined {
+		const s = this.load(id);
+		if (!s) return undefined;
+		const found = s.view.attachments.find((a) => a.id === attachmentId);
+		if (!found) return false;
+		this.folder.remove(found.path);
+		this.emit(id, s, {
+			type: "attachments",
+			pending: s.view.attachments.filter((a) => a !== found),
+		});
+		return true;
 	}
 
 	/** Changes the title or mode in the front matter. */
@@ -294,9 +346,27 @@ export class Sessions {
 		} catch {
 			return undefined;
 		}
+		view = { ...view, attachments: this.waiting(path, view) };
 		const s: LiveSession = { path, view, seq: 0 };
 		this.live.set(id, s);
 		return s;
+	}
+
+	/**
+	 * The photos in a session's attachments folder that no question links yet:
+	 * uploaded, not sent. The folder keeps them across a restart.
+	 */
+	private waiting(path: string, view: SessionView): Attachment[] {
+		const sent = new Set(
+			view.turns.flatMap((t) => t.user.attachments.map((a) => a.path)),
+		);
+		const dir = attachmentsDir(path);
+		return this.folder
+			.list(dir)
+			.filter(
+				(e) => !e.dir && photoType(e.name) && !sent.has(`${dir}/${e.name}`),
+			)
+			.map((e) => ({ id: e.name, path: `${dir}/${e.name}` }));
 	}
 
 	/**
@@ -315,6 +385,7 @@ export class Sessions {
 		let start: { resumeId?: string; seed?: string };
 		let asked: string;
 		let notes: Note[];
+		let images: AgentImage[];
 		try {
 			const before = read(this.folder, s.path);
 			const hash = bodyHash(before.body);
@@ -328,10 +399,14 @@ export class Sessions {
 					: {}),
 				...(history ? { seed: seedFrom(history) } : {}),
 			};
+			images = this.images(user.attachments);
 			const after = appendEntry(before, {
 				kind: "user",
 				text: user.text,
 				...(user.anchor === undefined ? {} : { anchor: user.anchor }),
+				...(user.attachments.length > 0
+					? { attachments: user.attachments.map((a) => a.path) }
+					: {}),
 			});
 			write(this.folder, s.path, after);
 			asked = bodyHash(after.body);
@@ -355,7 +430,10 @@ export class Sessions {
 					void this.run(id, s, agent);
 				}
 				// An agent seeded with the file has its notes already.
-				agent.push(agentMessage(user, fresh && !agent.resumed ? [] : notes));
+				agent.push(
+					agentMessage(user, fresh && !agent.resumed ? [] : notes),
+					images,
+				);
 				if (s.cancel === user.turnId) {
 					s.cancel = undefined;
 					void this.interrupt(id);
@@ -367,6 +445,19 @@ export class Sessions {
 		};
 		if (s.interrupting) void s.interrupting.then(push);
 		else void push();
+	}
+
+	/** The photos' bytes for Claude; one deleted meanwhile is left out. */
+	private images(attachments: Attachment[]): AgentImage[] {
+		return attachments.flatMap((a) => {
+			const type = photoType(a.path);
+			try {
+				const data = this.folder.readBytes(a.path).toString("base64");
+				return type ? [{ mediaType: type, data }] : [];
+			} catch {
+				return [];
+			}
+		});
 	}
 
 	/** Publishes the agent's events until it closes or fails. */
@@ -502,6 +593,21 @@ export class Sessions {
 
 export class BadRequest extends Error {}
 
+/** The photo types an upload may be; the server checks the bytes, not the name. */
+export type PhotoType = AgentImage["mediaType"];
+const PHOTO_EXTENSIONS: Record<PhotoType, string> = {
+	"image/jpeg": "jpg",
+	"image/png": "png",
+};
+
+/** The photo type a file's name says, for files the server saved itself. */
+function photoType(name: string): PhotoType | undefined {
+	const ext = extname(name).toLowerCase();
+	if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+	if (ext === ".png") return "image/png";
+	return undefined;
+}
+
 /** The view of a transcript: each question with the answer after it. */
 export function viewOf(transcript: Transcript, id: string): SessionView {
 	const view = emptyView(clientMeta({ ...transcript.meta, id }));
@@ -518,7 +624,10 @@ export function viewOf(transcript: Transcript, id: string): SessionView {
 					from: "local",
 					text: entry.text,
 					...(entry.anchor ? { anchor: entry.anchor } : {}),
-					attachments: [],
+					attachments: (entry.attachments ?? []).map((path) => ({
+						id: basename(path),
+						path,
+					})),
 				},
 				blocks: [],
 				// Until an answer follows: a question the server never answered.
@@ -574,10 +683,22 @@ function clientMeta(meta: Partial<TranscriptMeta> & SessionMeta): SessionMeta {
  * then the question.
  */
 export function agentMessage(
-	user: Pick<UserMessage, "text" | "anchor">,
+	user: Pick<UserMessage, "text" | "anchor"> &
+		Partial<Pick<UserMessage, "attachments">>,
 	notes: Note[] = [],
 ) {
 	const parts: string[] = [];
+	const photos = user.attachments ?? [];
+	if (photos.length > 0) {
+		parts.push(
+			[
+				"<photos>",
+				`The student took ${photos.length === 1 ? "this photo" : `these ${photos.length} photos`} with their phone, usually of handwritten work. They are attached above and saved in the study folder at:`,
+				...photos.map((a) => `- ${attr(a.path)}`),
+				"</photos>",
+			].join("\n"),
+		);
+	}
 	if (notes.length > 0) {
 		parts.push(
 			[
@@ -603,7 +724,7 @@ export function agentMessage(
 			].join("\n"),
 		);
 	}
-	parts.push(user.text);
+	if (user.text.trim()) parts.push(user.text);
 	return parts.join("\n\n");
 }
 

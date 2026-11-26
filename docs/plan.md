@@ -128,9 +128,9 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 
 ### 10. Phone
 - **What:** LAN mode while a device is paired, a QR code, the phone layout with a camera button, canvas downscaling, and attachments.
-- **From step 4:** LAN mode adds `http://<lan-ip>:<port>` to the Host and Origin allow-lists in `auth` and makes pairing links use it. `GET /pair/:code` redeems on open, so a chat app's link preview could spend a shared link: the QR is the path, not a pasted URL.
+- **From step 4:** LAN mode adds `http://<lan-ip>:<port>` to the Host and Origin allow-lists in `auth` and makes pairing links use it. The QR is the path, not a pasted URL. Step 10 also moved redemption to a POST from the page (`GET /pair/:code` only loads it), after a desktop link was found spent before its page showed; a preview or prefetch can no longer spend a code.
 - **Proof:**
-  - A manual iPhone check that `capture` works over plain HTTP; do this first.
+  - A manual phone check that `capture` works over plain HTTP; do this first. Done on Android Chrome (it opens the camera directly). iOS Safari is checked only in the Simulator, which has no camera.
   - An integration test: pair a device, upload a photo, see it appear in every subscribed client. A revoked device gets a 403.
 
 ### 11. Study modes

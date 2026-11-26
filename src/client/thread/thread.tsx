@@ -9,8 +9,11 @@
 import { ArrowDown, ArrowUp, FileText, Square } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { cn } from "#lib/utils.ts";
-import type { Anchor } from "../../shared/protocol.ts";
+import type { Anchor, Attachment } from "../../shared/protocol.ts";
+import { useLayout } from "../layout.ts";
 import { Markdown } from "../markdown/lazy.tsx";
+import { PhonePopover } from "../photos/phone-popover.tsx";
+import { CameraButton, PhotoStrip, SentPhotos } from "../photos/photos.tsx";
 import type { SessionState } from "../store.ts";
 import {
 	type ComposerDraft,
@@ -59,6 +62,8 @@ export function Thread({
 }) {
 	const running = isRunning(state.view);
 	const items = threadItems(state);
+	const phone = useLayout() === "phone";
+	const waiting = state.view?.attachments ?? [];
 	// Rows already there when the thread mounts appear at once; only new ones
 	// animate in, so opening the thread (or switching to it) is instant.
 	const [present] = useState(() => new Set(items.map(itemKey)));
@@ -73,11 +78,32 @@ export function Thread({
 		{
 			send: (text) => {
 				pin();
-				actions.send(text);
+				actions.send(
+					text,
+					waiting.map((a) => a.id),
+				);
 			},
 		},
 		draft,
+		waiting.length > 0,
 	);
+	const camera = (variant: "icon" | "hero" | "tile", label?: string) => (
+		<CameraButton
+			variant={variant}
+			onPhotos={actions.upload}
+			{...(label ? { label } : {})}
+		/>
+	);
+	const strip = (
+		<PhotoStrip
+			waiting={waiting}
+			uploads={state.uploads}
+			onDrop={actions.drop}
+			onDismiss={actions.dismissUpload}
+			more={phone ? camera("tile", "Sacar otra") : undefined}
+		/>
+	);
+	const photos = waiting.length > 0 || state.uploads.length > 0;
 	useStopOnEscape(running, actions.stop);
 	const turns = items.filter((i) => i.kind === "turn");
 	const active = useActiveCell(
@@ -96,7 +122,15 @@ export function Thread({
 					ref={content}
 					className="mx-auto max-w-[720px] px-4 pt-6 pb-16 sm:px-8 sm:pt-8"
 				>
-					{items.length === 0 && <Empty />}
+					{items.length === 0 && (
+						<Empty
+							camera={
+								phone && !photos
+									? camera("hero", "Sacar foto del ejercicio")
+									: undefined
+							}
+						/>
+					)}
 					{items.map((item, i) => (
 						<Cell
 							key={itemKey(item)}
@@ -136,9 +170,10 @@ export function Thread({
 						</button>
 					)}
 				</div>
-				{composerTop && (
-					<div className="mx-auto max-w-[720px] px-4 pt-3 sm:px-8">
+				{(composerTop || photos) && (
+					<div className="mx-auto grid max-w-[720px] gap-2 px-4 pt-3 sm:px-8">
 						{composerTop}
+						{photos && strip}
 					</div>
 				)}
 				<form
@@ -148,6 +183,14 @@ export function Thread({
 						composer.submit();
 					}}
 				>
+					{phone ? (
+						camera("icon")
+					) : (
+						<PhonePopover
+							session={state.view?.meta.id}
+							waiting={waiting.length}
+						/>
+					)}
 					<label htmlFor="composer" className="sr-only">
 						Mensaje
 					</label>
@@ -159,7 +202,11 @@ export function Thread({
 						onKeyDown={composer.onKeyDown}
 						rows={1}
 						placeholder={
-							running ? "Anotá la próxima pregunta…" : "Escribí una pregunta…"
+							running
+								? "Anotá la próxima pregunta…"
+								: photos
+									? "Agregá un comentario…"
+									: "Escribí una pregunta…"
 						}
 						className="field-sizing-content max-h-48 min-h-9 flex-1 resize-none bg-transparent py-1.5 font-heading text-[16px] leading-normal outline-none placeholder:text-subtle"
 					/>
@@ -179,14 +226,24 @@ export function Thread({
 	);
 }
 
-function Empty() {
+function Empty({ camera }: { camera?: ReactNode }) {
 	return (
 		<div className="grid gap-2 pt-[24dvh] text-center">
 			<p className="font-heading text-2xl">¿Qué estudiamos hoy?</p>
-			<p className="text-sm text-muted-foreground">
-				Escribí fórmulas en LaTeX, como <code>$\int_0^1 x\,dx$</code>, y se ven
-				renderizadas.
-			</p>
+			{camera ? (
+				<>
+					<p className="text-sm text-muted-foreground text-pretty">
+						Sacale una foto a lo que resolviste en papel, o escribí una
+						pregunta.
+					</p>
+					<div className="mt-4 flex justify-center">{camera}</div>
+				</>
+			) : (
+				<p className="text-sm text-muted-foreground">
+					Escribí fórmulas en LaTeX, como <code>$\int_0^1 x\,dx$</code>, y se
+					ven renderizadas.
+				</p>
+			)}
 		</div>
 	);
 }
@@ -209,6 +266,8 @@ function Cell({
 	const divider = first ? "" : "border-t";
 	if (item.kind !== "turn") {
 		const text = item.kind === "queued" ? item.user.text : item.message.text;
+		const photos =
+			item.kind === "queued" ? item.user.attachments : item.message.attachments;
 		const failed = item.kind === "outgoing" && item.message.failed;
 		const label = failed
 			? "No se envió"
@@ -221,6 +280,7 @@ function Cell({
 			>
 				<Question
 					text={text}
+					photos={photos}
 					label={label}
 					tone={failed ? "error" : "muted"}
 					pending
@@ -255,6 +315,7 @@ function Cell({
 		>
 			<Question
 				text={turn.user.text}
+				photos={turn.user.attachments}
 				anchor={turn.user.anchor}
 				onCite={onCite}
 				label={STATUS[state] ?? ""}
@@ -303,6 +364,7 @@ function Cell({
  */
 function Question({
 	text,
+	photos = [],
 	label,
 	tone,
 	pending = false,
@@ -310,6 +372,7 @@ function Question({
 	onCite,
 }: {
 	text: string;
+	photos?: Attachment[];
 	label: string;
 	tone: "muted" | "live" | "error";
 	pending?: boolean;
@@ -340,6 +403,7 @@ function Question({
 				)}
 			</div>
 			{anchor && <Citation anchor={anchor} onCite={onCite} />}
+			<SentPhotos photos={photos} />
 			<div
 				className={cn(
 					"answer question text-[15px] font-medium",
