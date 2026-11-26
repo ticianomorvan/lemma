@@ -10,28 +10,32 @@
  * so the limits, not the source, decide how long the server works on it.
  */
 
+import { MAX_TYPST_SOURCE } from "../../shared/blocks.ts";
+
+/** The one package a document may import (exports only); `worker.ts` serves it. */
+export const MITEX = { namespace: "preview", name: "mitex", version: "0.2.7" };
+export const MITEX_IMPORT = `@${MITEX.namespace}/${MITEX.name}:${MITEX.version}`;
+
 export type TypstJob = { id: number } & (
+	| { kind: "svg"; source: string }
 	| {
-			kind: "svg";
-			/** Set rules put before the source; error lines skip them. */
-			prelude: string;
-			source: string;
-	  }
-	| {
-			kind: "pdf";
+			/**
+			 * A `.typ` preview reads the study folder through its jail; an export
+			 * reads only its listed files, and may import the packages we ship.
+			 */
+			kind: "preview" | "export";
 			/** The study folder: the document's root. */
 			root: string;
 			/** The main file, relative to the root. */
 			main: string;
-			/** Root-relative paths the document may read, or the whole folder (jailed). */
-			files: string[] | "folder";
-			/** May import the packages Lemma ships (mitex, for exports). */
-			packages: boolean;
+			/** For an export: the root-relative paths it may read. */
+			files: string[];
 	  }
 );
 
+/** One reply: an SVG string for a block, PDF bytes otherwise. */
 export type TypstReply = { id: number } & (
-	| { ok: true; svg?: string; pdf?: Uint8Array }
+	| { ok: true; value: string | Uint8Array }
 	| { ok: false; error: string; fatal?: boolean }
 );
 
@@ -47,16 +51,6 @@ export const SVG_TIMEOUT_MS = 5_000;
 export const PDF_TIMEOUT_MS = 20_000;
 /** How long the Worker may take to load the compiler and fonts. */
 const STARTUP_MS = 20_000;
-/** The longest `typst` block accepted (client/blocks/kinds.ts agrees). */
-export const MAX_BLOCK_SOURCE = 20_000;
-
-/**
- * What every block is compiled with: a page that hugs its content, on a
- * transparent background, at a size that reads like the answer's text.
- */
-export const BLOCK_PRELUDE =
-	"#set page(width: auto, height: auto, margin: 4pt, fill: none); #set text(size: 12pt)\n";
-
 export class Typst {
 	private worker: Promise<Worker> | undefined;
 	private queue: Promise<unknown> = Promise.resolve();
@@ -74,31 +68,30 @@ export class Typst {
 
 	/** A `typst` block's SVG (not yet sanitized: the client does that). */
 	svg(source: string): Promise<TypstResult<string>> {
-		if (source.length > MAX_BLOCK_SOURCE) {
+		if (source.length > MAX_TYPST_SOURCE) {
 			return Promise.resolve({
 				ok: false,
-				error: `el bloque es demasiado largo (máx. ${MAX_BLOCK_SOURCE} caracteres)`,
+				error: `el bloque es demasiado largo (máx. ${MAX_TYPST_SOURCE} caracteres)`,
 			});
 		}
+		return this.run<string>({ kind: "svg", source }, this.svgTimeout);
+	}
+
+	/** A `.typ` file in the study folder as PDF, reading the folder (jailed). */
+	preview(root: string, main: string): Promise<TypstResult<Uint8Array>> {
 		return this.run(
-			{ kind: "svg", prelude: BLOCK_PRELUDE, source },
-			this.svgTimeout,
-			(r) => r.svg,
+			{ kind: "preview", root, main, files: [] },
+			this.pdfTimeout,
 		);
 	}
 
-	/** A document in the study folder, as PDF. */
-	pdf(job: {
-		root: string;
-		main: string;
-		files: string[] | "folder";
-		packages?: boolean;
-	}): Promise<TypstResult<Uint8Array>> {
-		return this.run(
-			{ kind: "pdf", packages: false, ...job },
-			this.pdfTimeout,
-			(r) => r.pdf,
-		);
+	/** An export as PDF: it reads only `files` (and the packages we ship). */
+	exportPdf(
+		root: string,
+		main: string,
+		files: string[],
+	): Promise<TypstResult<Uint8Array>> {
+		return this.run({ kind: "export", root, main, files }, this.pdfTimeout);
 	}
 
 	/** Starts the Worker now, so the first block doesn't wait for it. */
@@ -112,13 +105,12 @@ export class Typst {
 		void worker?.then((w) => w.terminate()).catch(() => {});
 	}
 
-	private run<T>(
+	private run<T extends string | Uint8Array>(
 		job: WithoutId<TypstJob>,
 		timeout: number,
-		pick: (reply: Extract<TypstReply, { ok: true }>) => T | undefined,
 	): Promise<TypstResult<T>> {
 		const result = this.queue.then(() =>
-			this.send({ ...job, id: this.nextId++ } as TypstJob, timeout, pick),
+			this.send<T>({ ...job, id: this.nextId++ } as TypstJob, timeout),
 		);
 		this.queue = result;
 		return result;
@@ -127,7 +119,6 @@ export class Typst {
 	private async send<T>(
 		job: TypstJob,
 		timeout: number,
-		pick: (reply: Extract<TypstReply, { ok: true }>) => T | undefined,
 	): Promise<TypstResult<T>> {
 		let worker: Worker;
 		try {
@@ -158,12 +149,7 @@ export class Typst {
 					if (reply.fatal) this.kill(worker);
 					return done({ ok: false, error: reply.error });
 				}
-				const value = pick(reply);
-				done(
-					value === undefined
-						? { ok: false, error: "Typst no devolvió nada" }
-						: { ok: true, value },
-				);
+				done({ ok: true, value: reply.value as T });
 			};
 			worker.onerror = (event) => {
 				this.kill(worker);

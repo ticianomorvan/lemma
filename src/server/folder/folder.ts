@@ -75,6 +75,18 @@ export class Folder {
 		}
 	}
 
+	/**
+	 * Like `resolve`, but also null for a hidden path (`.claude/…`, a dotfile),
+	 * before or after links are followed: what may be served or compiled.
+	 */
+	resolveVisible(path: string): string | null {
+		const hidden = (p: string) =>
+			p.split("/").some((x) => x === "" || x.startsWith("."));
+		if (hidden(path) || /[\\\0]/.test(path)) return null;
+		const real = this.resolve(path);
+		return real && !hidden(this.relative(real)) ? real : null;
+	}
+
 	/** The root-relative form of a path inside the root, with `/` separators. */
 	relative(absolute: string): string {
 		return relative(this.root, absolute).split(sep).join("/");

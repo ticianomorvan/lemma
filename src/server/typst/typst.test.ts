@@ -17,8 +17,8 @@ import {
 	format,
 	type TranscriptMeta,
 } from "../transcript/transcript.ts";
-import { exportPath, MITEX, str, text, toTypst } from "./export.ts";
-import { Typst } from "./typst.ts";
+import { exportPath, str, text, toTypst } from "./export.ts";
+import { MITEX_IMPORT, Typst } from "./typst.ts";
 
 afterEach(cleanUp);
 
@@ -71,7 +71,7 @@ test("a block sees no files and no packages", async () => {
 		"línea 1: el paquete @preview/cetz:0.3.0 no está disponible: Lemma no descarga paquetes de Typst",
 	);
 	// Even the package exports use is not for blocks.
-	expect(await errorOf(`#import "${MITEX}": mi`)).toContain(
+	expect(await errorOf(`#import "${MITEX_IMPORT}": mi`)).toContain(
 		"no está disponible",
 	);
 	// Errors point at the block's own lines, not the prelude's.
@@ -337,7 +337,7 @@ test("a session becomes a Typst document", async () => {
 					? "#DOT"
 					: null,
 	});
-	expect(doc).toStartWith(`#import "${MITEX}": mitex, mi\n`);
+	expect(doc).toStartWith(`#import "${MITEX_IMPORT}": mitex, mi\n`);
 	expect(doc).toContain("= Normal y autómatas");
 	// The question: its passage, its text with math and a line break, its photo.
 	expect(doc).toContain("#fuente[apunte.pdf, p. 3]");
@@ -368,7 +368,7 @@ test("a session becomes a Typst document", async () => {
 	);
 	expect(doc).toContain("#table(columns: 2,");
 	expect(doc).toContain("- uno\n- dos");
-	expect(doc).toContain("#set enum(start: 3)\n+ tres\n+ cuatro");
+	expect(doc).toContain("#[\n#set enum(start: 3)\n+ tres\n+ cuatro\n]");
 	// The note, and the interrupted answer.
 	expect(doc).toContain("#fuente[Nota · apunte.pdf, p. 4]");
 	expect(doc).toContain("repasar para el parcial");

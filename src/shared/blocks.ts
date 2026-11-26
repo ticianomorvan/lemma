@@ -14,6 +14,12 @@ export const BLOCK_KIND_NAMES = [
 	"typst",
 ] as const;
 
+/** The longest `typst` block (or other diagram source) the server compiles. */
+export const MAX_TYPST_SOURCE = 20_000;
+
+/** A Typst file, by its name. */
+export const isTypstFile = (path: string) => /\.typ$/i.test(path);
+
 export type BlockKindName = (typeof BLOCK_KIND_NAMES)[number];
 
 export const isBlockKindName = (lang: string): lang is BlockKindName =>

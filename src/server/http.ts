@@ -1,5 +1,6 @@
 import { extname, join, resolve } from "node:path";
 import { type ZodType, z } from "zod";
+import { isTypstFile } from "../shared/blocks.ts";
 import {
 	type Attachment,
 	ClientMessage,
@@ -625,7 +626,11 @@ function parseJson(text: string): unknown {
 function materials(folder: Folder, course: string) {
 	if (!isCourseName(course)) return [];
 	const files: MaterialsResponse["files"] = [];
-	const walk = (dir: string, depth: number, kinds: RegExp) => {
+	const walk = (
+		dir: string,
+		depth: number,
+		wanted: (name: string) => boolean,
+	) => {
 		let entries: ReturnType<Folder["list"]>;
 		try {
 			entries = folder.list(dir);
@@ -636,14 +641,14 @@ function materials(folder: Folder, course: string) {
 		for (const e of entries) {
 			const path = `${dir}/${e.name}`;
 			if (e.dir) {
-				if (depth < 3) walk(path, depth + 1, kinds);
-			} else if (kinds.test(e.name) && folder.resolve(path)) {
+				if (depth < 3) walk(path, depth + 1, wanted);
+			} else if (wanted(e.name) && folder.resolve(path)) {
 				files.push({ path, name: e.name });
 			}
 		}
 	};
-	walk(materialsDir(course), 0, /\.(pdf|typ)$/i);
-	walk(notesDir(course), 0, /\.typ$/i);
+	walk(materialsDir(course), 0, (n) => /\.pdf$/i.test(n) || isTypstFile(n));
+	walk(notesDir(course), 0, isTypstFile);
 	return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -730,13 +735,7 @@ function studyFile(
 	} catch {
 		return null;
 	}
-	const hidden = (p: string) =>
-		p.split("/").some((x) => x === "" || x.startsWith("."));
-	if (hidden(path) || /[\\\0]/.test(path)) return null;
-	const real = folder.resolve(path);
-	// A link inside the folder that points into a hidden one is refused too.
-	if (!real || hidden(folder.relative(real))) return null;
-	return real;
+	return folder.resolveVisible(path);
 }
 
 /**
@@ -751,14 +750,10 @@ async function servePreview(req: Request, folder: Folder, typst: Typst) {
 		.stat()
 		.then((s) => s.isFile())
 		.catch(() => false);
-	if (!real || !isFile || extname(real).toLowerCase() !== ".typ") {
+	if (!real || !isFile || !isTypstFile(real)) {
 		return error(404, "not_found", "no such Typst file");
 	}
-	const compiled = await typst.pdf({
-		root: folder.root,
-		main: folder.relative(real),
-		files: "folder",
-	});
+	const compiled = await typst.preview(folder.root, folder.relative(real));
 	if (!compiled.ok) return error(422, "typst_error", compiled.error);
 	return new Response(compiled.value as Uint8Array<ArrayBuffer>, {
 		headers: {

@@ -28,6 +28,7 @@ import {
 } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { cn } from "#lib/utils.ts";
+import { isTypstFile } from "../../shared/blocks.ts";
 import type { Anchor } from "../../shared/protocol.ts";
 import {
 	anchorRange,
@@ -48,12 +49,11 @@ const OPTIONS = { disableAutoFetch: true, disableStream: true };
 /** A passage to paint and to answer clicks and hovers on. */
 export type Mark = { key: string; anchor: Anchor; kind: "question" | "note" };
 
-export function fileUrl(path: string) {
+/** Where a document comes from: `/files/*`, or the server compiles it. */
+function documentUrl(path: string) {
 	const encoded = path.split("/").map(encodeURIComponent).join("/");
-	return isTypst(path) ? `/api/typst/pdf/${encoded}` : `/files/${encoded}`;
+	return isTypstFile(path) ? `/api/typst/pdf/${encoded}` : `/files/${encoded}`;
 }
-
-const isTypst = (path: string) => /\.typ$/i.test(path);
 
 export default function PdfPages({
 	path,
@@ -152,7 +152,7 @@ export default function PdfPages({
 	};
 
 	const typst = useTypstPdf(path);
-	const url = useMemo(() => fileUrl(path), [path]);
+	const url = useMemo(() => documentUrl(path), [path]);
 	const file = typst?.file ?? url;
 	return (
 		// A highlight is a pointer shortcut to its cards; the cards and pins
@@ -182,7 +182,7 @@ export default function PdfPages({
 						{typst.error}
 					</p>
 				</div>
-			) : isTypst(path) && !typst ? (
+			) : isTypstFile(path) && !typst ? (
 				<PageSkeleton ratio={ratio} width={width} />
 			) : (
 				<Suspense fallback={<PageSkeleton ratio={ratio} width={width} />}>
@@ -258,12 +258,12 @@ function useTypstPdf(path: string) {
 		error?: string;
 	}>();
 	useEffect(() => {
-		if (!isTypst(path)) return;
+		if (!isTypstFile(path)) return;
 		let cancelled = false;
 		const done = (r: { file: { data: Uint8Array } } | { error: string }) => {
 			if (!cancelled) setResult({ path, ...r });
 		};
-		fetch(fileUrl(path))
+		fetch(documentUrl(path))
 			.then(async (res) => {
 				if (res.ok) {
 					return done({
@@ -280,7 +280,7 @@ function useTypstPdf(path: string) {
 			cancelled = true;
 		};
 	}, [path]);
-	return isTypst(path) && result?.path === path ? result : undefined;
+	return isTypstFile(path) && result?.path === path ? result : undefined;
 }
 
 function PageSkeleton({ ratio, width }: { ratio: number; width: number }) {

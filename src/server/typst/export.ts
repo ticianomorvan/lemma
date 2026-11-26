@@ -30,7 +30,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import { isBlockKindName } from "../../shared/blocks.ts";
+import { isBlockKindName, MAX_TYPST_SOURCE } from "../../shared/blocks.ts";
 import { normalizeMath } from "../../shared/normalize-math.ts";
 import type { Anchor } from "../../shared/protocol.ts";
 import type { Folder } from "../folder/folder.ts";
@@ -40,10 +40,7 @@ import {
 	parse,
 	type TranscriptMeta,
 } from "../transcript/transcript.ts";
-import type { Typst } from "./typst.ts";
-
-/** The mitex the export imports; `worker.ts` ships exactly this one. */
-export const MITEX = "@preview/mitex:0.2.7";
+import { MITEX_IMPORT, type Typst } from "./typst.ts";
 
 /** Draws a diagram block as Typst, or null to keep its source. */
 export type DrawBlock = (
@@ -78,7 +75,7 @@ export async function toTypst(
 	{ typPath, draw }: { typPath: string; draw: DrawBlock },
 ): Promise<string> {
 	const out: string[] = [
-		`#import "${MITEX}": mitex, mi`,
+		`#import "${MITEX_IMPORT}": mitex, mi`,
 		"",
 		`#set document(title: ${str(meta.title || "Sesión")})`,
 		'#set page(paper: "a4", margin: 2cm, numbering: "1")',
@@ -208,7 +205,8 @@ async function list(node: List, draw: DrawBlock): Promise<string> {
 	}
 	const start = node.ordered && node.start != null && node.start !== 1;
 	return start
-		? `#set enum(start: ${node.start})\n${items.join("\n")}`
+		? // Scoped, so later lists start at 1 again.
+			`#[\n#set enum(start: ${node.start})\n${items.join("\n")}\n]`
 		: items.join("\n");
 }
 
@@ -325,12 +323,7 @@ export async function exportSession(
 	const photos = entries.flatMap((e) =>
 		e.kind === "user" ? (e.attachments ?? []) : [],
 	);
-	const compiled = await typst.pdf({
-		root: folder.root,
-		main: typ,
-		files: [typ, ...photos],
-		packages: true,
-	});
+	const compiled = await typst.exportPdf(folder.root, typ, [typ, ...photos]);
 	const pdf = typ.replace(/\.typ$/, ".pdf");
 	if (!compiled.ok) return { typ, pdf: null, error: compiled.error };
 	folder.writeAtomic(pdf, compiled.value);
@@ -364,7 +357,7 @@ export async function drawBlock(
 let viz: Promise<import("@viz-js/viz").Viz> | undefined;
 
 async function dotSvg(src: string): Promise<string | null> {
-	if (src.length > 20_000) return null;
+	if (src.length > MAX_TYPST_SOURCE) return null;
 	viz ??= import("@viz-js/viz").then((m) => m.instance());
 	const result = (await viz).render(src, {
 		format: "svg",

@@ -4,6 +4,7 @@
  * here is a protocol change. See docs/architecture.md → Client protocol.
  */
 import { z } from "zod";
+import { MAX_TYPST_SOURCE } from "./blocks.ts";
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
@@ -348,7 +349,9 @@ export const MaterialsResponse = z.object({
 export type MaterialsResponse = z.infer<typeof MaterialsResponse>;
 
 /** `POST /api/typst/svg`: a `typst` block to draw. */
-export const TypstSvgBody = z.object({ source: z.string().max(20_000) });
+export const TypstSvgBody = z.object({
+	source: z.string().max(MAX_TYPST_SOURCE),
+});
 export type TypstSvgBody = z.infer<typeof TypstSvgBody>;
 
 /** The block's SVG, not yet sanitized; an error is a 422 with the message. */

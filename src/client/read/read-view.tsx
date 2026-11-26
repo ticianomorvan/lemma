@@ -23,6 +23,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { isTypstFile } from "../../shared/blocks.ts";
 import type { Anchor, MaterialsResponse } from "../../shared/protocol.ts";
 import type { Layout } from "../layout.ts";
 import type { SessionState, SessionStore } from "../store.ts";
@@ -198,7 +199,7 @@ function Read({
 				onHover={phone ? undefined : setActive}
 				onPages={setPages}
 				onPage={setPage}
-				place={version ? place.current : kept?.place}
+				place={place.current}
 				onPlace={onPlace}
 				compact={phone}
 			/>
@@ -285,9 +286,11 @@ function Read({
 function useRecompiles(store: SessionStore, file: string) {
 	const [version, setVersion] = useState(0);
 	useEffect(() => {
-		if (!/\.typ$/i.test(file)) return;
+		if (!isTypstFile(file)) return;
 		return store.onFolderChange((path) => {
-			if (/\.typ$/i.test(path)) setVersion((v) => v + 1);
+			// An export writing its own `.typ` is not a change to a note.
+			if (isTypstFile(path) && !path.includes("/exports/"))
+				setVersion((v) => v + 1);
 		});
 	}, [store, file]);
 	return version;

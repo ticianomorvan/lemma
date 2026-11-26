@@ -24,20 +24,27 @@ import {
 	withPackageRegistry,
 } from "@myriaddreamin/typst.ts/options.init";
 import { Folder } from "../folder/folder.ts";
-import type { TypstJob, TypstReply } from "./typst.ts";
+import { MITEX, type TypstJob, type TypstReply } from "./typst.ts";
 
 declare const self: Worker;
 
 const ASSETS = join(import.meta.dir, "assets");
 const FONTS = join(ASSETS, "fonts");
 const PACKAGES = join(ASSETS, "packages");
-/** The packages a document may import, as `namespace/name/version`. */
-const SHIPPED = new Set(["preview/mitex/0.2.7"]);
+/** The one package a document may import (exports only). */
+const SHIPPED = `${MITEX.namespace}/${MITEX.name}/${MITEX.version}`;
 /** Where packages appear to the compiler; never a real path. */
 const PACKAGE_ROOT = "/@lemma/packages";
 /** The virtual folder an `svg` job's source lives in. */
 const BLOCK_ROOT = "/@lemma/block";
 const BLOCK_MAIN = `${BLOCK_ROOT}/main.typ`;
+/**
+ * What every block is compiled with, on one line before its source: a page
+ * that hugs its content, on a transparent background, at a size that reads
+ * like the answer's text.
+ */
+const BLOCK_PRELUDE =
+	"#set page(width: auto, height: auto, margin: 4pt, fill: none); #set text(size: 12pt)\n";
 /**
  * A package's WebAssembly, in the `{module_or_path}` form wasm-bindgen asks
  * for (bare bytes still work, with a deprecation warning).
@@ -69,13 +76,9 @@ function allowed(path: string): string | null {
 			return null;
 		case "files":
 			return access.files.has(path) ? path : null;
-		case "folder": {
-			const real = access.folder.resolve(path);
-			if (!real) return null;
-			const rel = access.folder.relative(real);
-			// Hidden names (`.claude/…`) stay hidden, as in `/files/*`.
-			return rel.split("/").some((p) => p.startsWith(".")) ? null : real;
-		}
+		case "folder":
+			// The same jail as `/files/*`: no hidden names (`.claude/…`).
+			return access.folder.resolveVisible(access.folder.relative(path));
 	}
 }
 
@@ -110,7 +113,7 @@ const accessModel = {
 const registry = {
 	resolve(spec: { namespace: string; name: string; version: string }) {
 		const id = `${spec.namespace}/${spec.name}/${spec.version}`;
-		return packagesAllowed && SHIPPED.has(id)
+		return packagesAllowed && id === SHIPPED
 			? `${PACKAGE_ROOT}/${id}`
 			: undefined;
 	},
@@ -198,7 +201,7 @@ async function run(job: TypstJob): Promise<TypstReply> {
 	if (job.kind === "svg") {
 		access = { kind: "none" };
 		packagesAllowed = false;
-		compiler.addSource(BLOCK_MAIN, job.prelude + job.source);
+		compiler.addSource(BLOCK_MAIN, BLOCK_PRELUDE + job.source);
 		const out = await compiler.compile({
 			mainFilePath: BLOCK_MAIN,
 			root: BLOCK_ROOT,
@@ -209,10 +212,7 @@ async function run(job: TypstJob): Promise<TypstReply> {
 			return {
 				id: job.id,
 				ok: false,
-				error: failure(
-					out.diagnostics as Diagnostic[],
-					job.prelude.split("\n").length - 1,
-				),
+				error: failure(out.diagnostics as Diagnostic[], 1),
 			};
 		}
 		const svg = await renderer.runWithSession(async (session) => {
@@ -223,7 +223,7 @@ async function run(job: TypstJob): Promise<TypstReply> {
 			});
 			return renderer.renderSvg({ renderSession: session });
 		});
-		return { id: job.id, ok: true, svg: drawingOnly(svg) };
+		return { id: job.id, ok: true, value: drawingOnly(svg) };
 	}
 	const folder = new Folder(job.root);
 	const main = folder.resolve(job.main);
@@ -231,13 +231,13 @@ async function run(job: TypstJob): Promise<TypstReply> {
 		return { id: job.id, ok: false, error: "el archivo no está en la carpeta" };
 	}
 	access =
-		job.files === "folder"
+		job.kind === "preview"
 			? { kind: "folder", folder }
 			: {
 					kind: "files",
 					files: new Set(job.files.flatMap((f) => folder.resolve(f) ?? [])),
 				};
-	packagesAllowed = job.packages;
+	packagesAllowed = job.kind === "export";
 	try {
 		const root = folder.root;
 		const out = await compiler.compile({
@@ -247,7 +247,7 @@ async function run(job: TypstJob): Promise<TypstReply> {
 			diagnostics: "full",
 		});
 		return out.result
-			? { id: job.id, ok: true, pdf: out.result as Uint8Array }
+			? { id: job.id, ok: true, value: out.result as Uint8Array }
 			: {
 					id: job.id,
 					ok: false,
