@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-/** Port of the Bun server (`src/server/main.ts`) that the dev server forwards `/api` and `/ws` to. */
+/** Port of the Bun server (`src/server/main.ts`) that the dev server forwards `/api`, `/pair`, `/files` and `/ws` to. */
 const apiPort = Number(process.env.PORT ?? 4317);
 const api = `http://127.0.0.1:${apiPort}`;
 
@@ -32,7 +32,12 @@ export default defineConfig({
 		// rewrite them; it trusts this origin in dev only.
 		proxy: {
 			"/api": api,
-			"/pair": api,
+			// Opening a pairing link loads the app (Vite serves it); the app
+			// redeems the code with a POST, which goes to Bun.
+			"/pair": {
+				target: api,
+				bypass: (req) => (req.method === "GET" ? "/index.html" : undefined),
+			},
 			"/files": api,
 			"/ws": { target: api, ws: true },
 		},

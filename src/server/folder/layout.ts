@@ -9,6 +9,16 @@ const RESERVED = new Set(["inbox"]);
 
 export const sessionsDir = (course: string) => `${course}/sessions`;
 
+/**
+ * Where a session's photos go: a folder named like its transcript, beside it
+ * (`<course>/sessions/<file>/` for `<course>/sessions/<file>.md`).
+ */
+export const attachmentsDir = (transcript: string) =>
+	transcript.replace(/\.md$/, "");
+
+/** Where photos sent with no session open go. */
+export const INBOX = "inbox";
+
 /** Where a course's PDFs and other material live. */
 export const materialsDir = (course: string) => `${course}/materials`;
 

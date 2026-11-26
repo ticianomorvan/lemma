@@ -79,6 +79,19 @@ export async function start({
 	return { server, api, cookie };
 }
 
+/**
+ * What a pairing page does with its link: a same-origin POST to it (opening
+ * it only loads the page).
+ */
+export const redeem = (
+	url: string | URL,
+	headers: Record<string, string> = {},
+) =>
+	fetch(url, {
+		method: "POST",
+		headers: { origin: new URL(url).origin, ...headers },
+	});
+
 /** Redeems a fresh pairing code and returns the `name=token` cookie it set. */
 export async function pair(
 	server: Server,
@@ -86,11 +99,8 @@ export async function pair(
 ) {
 	// Straight to this server, even when the link names the dev server.
 	const { pathname } = new URL(authOf(server).startPairing().url);
-	const res = await fetch(new URL(pathname, server.url), {
-		redirect: "manual",
-		headers,
-	});
-	expect(res.status).toBe(303);
+	const res = await redeem(new URL(pathname, server.url), headers);
+	expect(res.status).toBe(200);
 	const set = res.headers.get("set-cookie") ?? "";
 	return set.split(";")[0] as string;
 }
@@ -102,7 +112,7 @@ export async function pair(
 export async function serve(
 	options: FakeDriverOptions,
 	reuse: { driver?: FakeDriver; studyDir?: string; create?: boolean } & Partial<
-		Pick<ServerOptions, "idleMs">
+		Pick<ServerOptions, "idleMs" | "lanAddress">
 	> = {},
 ) {
 	const driver = reuse.driver ?? new FakeDriver(options);
@@ -113,6 +123,7 @@ export async function serve(
 		driver,
 		studyDir: dir,
 		...(reuse.idleMs === undefined ? {} : { idleMs: reuse.idleMs }),
+		...(reuse.lanAddress ? { lanAddress: reuse.lanAddress } : {}),
 	});
 	if (reuse.create === false)
 		return { server, api, cookie, id: "", driver, dir };
@@ -143,12 +154,13 @@ export function hold(index: number, turn = 0) {
  * A WebSocket to `/ws` with these headers. Bun's client takes `headers`;
  * the DOM types, which win in this tsconfig, don't know it.
  */
-export function socket(server: Server, headers: Record<string, string>) {
+export function socket(server: Server | URL, headers: Record<string, string>) {
 	const BunSocket = WebSocket as unknown as new (
 		url: URL,
 		options: Bun.WebSocketOptions,
 	) => WebSocket;
-	return new BunSocket(new URL("/ws", server.url.href.replace("http", "ws")), {
+	const url = server instanceof URL ? server : server.url;
+	return new BunSocket(new URL("/ws", url.href.replace("http", "ws")), {
 		headers,
 	});
 }
@@ -164,11 +176,18 @@ export class Client {
 		};
 	}
 
-	static async subscribe(server: Server, session: string) {
-		const ws = socket(server, {
-			cookie: cookies.get(server) ?? "",
-			origin: server.url.origin,
-		});
+	/** As the server's paired client, or `as` another (a phone on the LAN). */
+	static async subscribe(
+		server: Server,
+		session: string,
+		as?: { origin: string; cookie: string },
+	) {
+		const ws = as
+			? socket(new URL(as.origin), { cookie: as.cookie, origin: as.origin })
+			: socket(server, {
+					cookie: cookies.get(server) ?? "",
+					origin: server.url.origin,
+				});
 		sockets.push(ws);
 		await new Promise((resolve) => (ws.onopen = resolve));
 		const client = new Client(ws);

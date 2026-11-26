@@ -84,6 +84,10 @@ export class Folder {
 		return readFileSync(this.jailed(path), "utf8");
 	}
 
+	readBytes(path: string): Buffer {
+		return readFileSync(this.jailed(path));
+	}
+
 	/** Writes through a temporary file and a rename, creating parent folders. */
 	writeAtomic(path: string, content: string) {
 		const target = this.jailed(path);
@@ -104,6 +108,45 @@ export class Folder {
 
 	modified(path: string): Date {
 		return statSync(this.jailed(path)).mtime;
+	}
+
+	/**
+	 * Saves a photo as the next `NNN-<name>` in `dir` (made if needed), never
+	 * over an existing file, and returns its root-relative path. `prefix` goes
+	 * before the number (the inbox uses the date).
+	 */
+	saveAttachment(
+		dir: string,
+		bytes: Uint8Array,
+		name: string,
+		prefix = "",
+	): string {
+		const target = this.jailed(dir);
+		mkdirSync(target, { recursive: true });
+		const numbered = new RegExp(`^${escapeRegExp(prefix)}(\\d{3,})-`);
+		let n = Math.max(
+			0,
+			...readdirSync(target).map((f) => Number(numbered.exec(f)?.[1] ?? 0)),
+		);
+		while (true) {
+			n += 1;
+			const file = join(
+				target,
+				`${prefix}${String(n).padStart(3, "0")}-${name}`,
+			);
+			try {
+				// `wx`: fails if another upload took the name first.
+				writeFileSync(file, bytes, { flag: "wx" });
+				return this.relative(file);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			}
+		}
+	}
+
+	/** Deletes a file inside the root; a missing one is not an error. */
+	remove(path: string) {
+		rmSync(this.jailed(path), { force: true });
 	}
 
 	/** Creates a folder (and its parents) inside the root. */
@@ -198,6 +241,9 @@ function isLink(path: string) {
 		return false;
 	}
 }
+
+const escapeRegExp = (text: string) =>
+	text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const hash = (content: string) =>
 	createHash("sha256").update(content).digest("hex");

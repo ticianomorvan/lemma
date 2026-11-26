@@ -221,3 +221,33 @@ test("a title change keeps the body hash", () => {
 test("a file with no front matter is refused", () => {
 	expect(() => parse("## Tú\n\nhola\n")).toThrow("front matter");
 });
+
+test("a question's photos are plain Markdown images, and parse back", () => {
+	const photos: Entry[] = [
+		{
+			kind: "user",
+			text: "¿Está bien el paso 2?",
+			attachments: [
+				"probabilidad/sessions/2026-11-25-3f2a9c1e/001-photo.jpg",
+				"probabilidad/sessions/2026-11-25-3f2a9c1e/002 (copia).png",
+			],
+		},
+		// A photo alone, with no text.
+		{
+			kind: "user",
+			text: "",
+			attachments: ["inbox/2026-11-25-001-photo.jpg"],
+		},
+	];
+	const md = format(meta, photos);
+	expect(md).toContain(
+		"¿Está bien el paso 2?\n\n![Foto](../../probabilidad/sessions/2026-11-25-3f2a9c1e/001-photo.jpg)\n![Foto](../../probabilidad/sessions/2026-11-25-3f2a9c1e/002%20%28copia%29.png)",
+	);
+	expect(parse(md).entries).toEqual(photos);
+	// An image the student wrote mid-question stays text.
+	const own: Entry = {
+		kind: "user",
+		text: "Mirá ![Foto](../../x.jpg) y decime.",
+	};
+	expect(parse(format(meta, [own])).entries).toEqual([own]);
+});

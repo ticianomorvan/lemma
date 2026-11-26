@@ -1,6 +1,7 @@
 import { extname, join, resolve } from "node:path";
 import { type ZodType, z } from "zod";
 import {
+	type Attachment,
 	ClientMessage,
 	CreateSessionBody,
 	type CreateSessionResponse,
@@ -10,18 +11,26 @@ import {
 	type InterruptResponse,
 	type MaterialsResponse,
 	NoteBody,
+	PairBody,
 	type PairResponse,
 	PatchSessionBody,
+	type RedeemResponse,
 	SendMessageBody,
 	type ServerMessage,
 	SetFolderBody,
 	type StateResponse,
 } from "../shared/protocol.ts";
 import type { AgentDriver } from "./agent/driver.ts";
-import type { Auth } from "./auth/auth.ts";
+import { type Auth, CODE_TTL_MS } from "./auth/auth.ts";
 import { chooseStudyFolder } from "./config.ts";
 import { Folder } from "./folder/folder.ts";
 import { isCourseName, materialsDir } from "./folder/layout.ts";
+import {
+	MAX_PHOTO_BYTES,
+	type PhotoType,
+	saveToInbox,
+	sniffPhoto,
+} from "./photos.ts";
 import { BadRequest, Sessions, topic } from "./sessions.ts";
 
 export type ServerOptions = {
@@ -45,6 +54,11 @@ export type ServerOptions = {
 	 * pairing link any more, so the caller prints a new one.
 	 */
 	onNoDevices?: () => void;
+	/**
+	 * The address LAN mode binds while a phone is paired (`lanAddress()` in
+	 * `lan.ts`); null when there is no LAN. Without it, LAN mode is off.
+	 */
+	lanAddress?: () => string | null;
 };
 
 /** Per-socket data: the device the socket was opened by. */
@@ -65,9 +79,17 @@ export async function startServer({
 	idleMs,
 	auth,
 	onNoDevices,
+	lanAddress,
 }: ServerOptions) {
-	const publish = (name: string, message: ServerMessage) =>
-		server.publish(name, JSON.stringify(message));
+	/** The LAN listener, while LAN mode is on: the same routes on the LAN address. */
+	let lan: Bun.Server<Socket> | null = null;
+	/** Re-checks LAN mode when a phone's code runs out; cleared on stop. */
+	const expiries = new Set<ReturnType<typeof setTimeout>>();
+	const publish = (name: string, message: ServerMessage) => {
+		const text = JSON.stringify(message);
+		server.publish(name, text);
+		lan?.publish(name, text);
+	};
 	const open = (dir: string): Study => {
 		const folder = new Folder(dir);
 		const sessions = new Sessions({
@@ -133,223 +155,335 @@ export async function startServer({
 		);
 	const client = distDir ? await clientRoutes(distDir, trusted) : null;
 
-	const server: Bun.Server<Socket> = Bun.serve({
-		hostname: HOST,
-		port,
-		maxRequestBodySize: 1024 * 1024,
-		routes: {
-			...client?.routes,
-			"/pair/:code": {
-				GET: trusted((req) => {
-					const redeemed = auth.redeem(req.params.code, req);
-					if (!redeemed) {
-						// The client shows "this link no longer works" at this path.
-						return client
+	/**
+	 * LAN mode follows `auth.wantsLan()` (a phone is paired, or its code is
+	 * waiting): the LAN listener starts and its origin is allowed, or both
+	 * go. `force` turns it on for a phone's new code. False when there is no
+	 * LAN to bind.
+	 */
+	const syncLan = (force = false) => {
+		const wanted = force || auth.wantsLan();
+		if (wanted && !lan) {
+			const address = lanAddress?.();
+			if (!address) return false;
+			try {
+				lan = listen(address, server.port as number);
+			} catch (cause) {
+				console.error(`LAN mode: cannot listen on ${address}:`, cause);
+				return false;
+			}
+			auth.setLan(address);
+			console.log(`LAN mode on: ${auth.lan}`);
+		} else if (!wanted && lan) {
+			auth.setLan(null);
+			// Not forced: the request that revoked the last phone may be on it.
+			void lan.stop();
+			lan = null;
+			console.log("LAN mode off: no phone is paired");
+		}
+		return lan !== null;
+	};
+
+	/** Both listeners serve these: 127.0.0.1 always, the LAN address in LAN mode. */
+	const listen = (hostname: string, port: number): Bun.Server<Socket> =>
+		Bun.serve({
+			hostname,
+			port,
+			// A photo (MAX_PHOTO_BYTES) and its multipart framing; JSON bodies are
+			// capped by their schemas.
+			maxRequestBodySize: MAX_PHOTO_BYTES + 64 * 1024,
+			routes: {
+				...client?.routes,
+				"/pair/:code": {
+					// Opening the link only loads the page; the page redeems it with
+					// the POST below. A chat app's link preview, a prefetch or a
+					// prerender fetches the page but never spends the code.
+					GET: trusted(() =>
+						client
 							? new Response(client.index, {
-									status: 403,
 									headers: {
+										"content-type": "text/html;charset=utf-8",
 										"cache-control": "no-store",
 										"content-security-policy": CSP,
 									},
 								})
-							: error(403, "bad_code", "this pairing link was used or expired");
-					}
-					return new Response(null, {
-						status: 303,
-						headers: {
-							location: "/",
-							"cache-control": "no-store",
-							...(redeemed.cookie ? { "set-cookie": redeemed.cookie } : {}),
-						},
-					});
-				}),
-			},
-			"/api/pair": {
-				POST: paired(() =>
-					Response.json(auth.startPairing() satisfies PairResponse, {
-						status: 201,
-					}),
-				),
-			},
-			"/api/devices": {
-				GET: paired((_, device) =>
-					Response.json({
-						devices: auth.list(),
-						current: device.id,
-					} satisfies DevicesResponse),
-				),
-			},
-			"/api/devices/:id": {
-				DELETE: paired((req) => {
-					const { id } = req.params;
-					if (!auth.revoke(id)) {
-						return error(404, "not_found", "no such device");
-					}
-					for (const ws of sockets.get(id) ?? []) ws.close(1008, "revoked");
-					sockets.delete(id);
-					if (auth.list().length === 0) onNoDevices?.();
-					return new Response(null, { status: 204 });
-				}),
-			},
-			"/api/state": {
-				GET: paired(() =>
-					Response.json(
-						(study
-							? {
-									folder: study.folder.root,
-									courses: study.sessions.courses(),
-									sessions: study.sessions.list(),
-								}
-							: {
-									folder: null,
-									courses: [],
-									sessions: [],
-								}) satisfies StateResponse,
+							: error(404, "not_found", "no client build"),
 					),
-				),
-			},
-			"/api/folder": {
-				POST: paired((req) =>
-					withBody(req, SetFolderBody, (body) => {
-						if (study) {
+					POST: trusted((req) => {
+						const redeemed = auth.redeem(req.params.code, req);
+						if (!redeemed) {
 							return error(
-								409,
-								"folder_set",
-								"the study folder is already set",
+								403,
+								"bad_code",
+								"this pairing link was used or expired",
 							);
 						}
-						const chosen = chooseStudyFolder(body.path);
-						if ("code" in chosen) {
-							return error(400, chosen.code, chosen.message);
-						}
-						const opened = open(chosen.dir);
-						try {
-							saveStudyDir?.(opened.folder.root);
-						} catch (cause) {
-							opened.unwatch();
-							throw cause;
-						}
-						study = opened;
+						// A phone's QR opens the session the desktop had open.
+						const next = new URL(req.url).searchParams.get("next") ?? "";
 						return Response.json(
-							{ folder: study.folder.root },
-							{ status: 201 },
+							{
+								next: /^\/s\/[\w-]+$/.test(next) ? next : "/",
+							} satisfies RedeemResponse,
+							{
+								headers: {
+									"cache-control": "no-store",
+									...(redeemed.cookie ? { "set-cookie": redeemed.cookie } : {}),
+								},
+							},
 						);
 					}),
-				),
-			},
-			"/api/sessions": {
-				POST: withStudy((req, { sessions }) =>
-					withBody(req, CreateSessionBody, (body) =>
+				},
+				"/api/pair": {
+					// No body: a link for another browser here. `{lan: true}`: a
+					// phone's, which turns LAN mode on until the code expires.
+					POST: paired((req) => {
+						const pair = ({ lan = false }: PairBody) => {
+							if (lan && !syncLan(true)) {
+								return error(
+									409,
+									"no_lan",
+									"this computer is not on a local network",
+								);
+							}
+							const link = auth.startPairing({ lan });
+							// An unused code stops keeping LAN mode on once it expires.
+							if (lan) {
+								const timer = setTimeout(() => {
+									expiries.delete(timer);
+									syncLan();
+								}, CODE_TTL_MS + 1000);
+								timer.unref();
+								expiries.add(timer);
+							}
+							return Response.json(link satisfies PairResponse, {
+								status: 201,
+							});
+						};
+						return req.headers.get("content-type")
+							? withBody(req, PairBody, pair)
+							: pair({});
+					}),
+				},
+				"/api/devices": {
+					GET: paired((_, device) =>
+						Response.json({
+							devices: auth.list(),
+							current: device.id,
+						} satisfies DevicesResponse),
+					),
+				},
+				"/api/devices/:id": {
+					DELETE: paired((req) => {
+						const { id } = req.params;
+						if (!auth.revoke(id)) {
+							return error(404, "not_found", "no such device");
+						}
+						for (const ws of sockets.get(id) ?? []) ws.close(1008, "revoked");
+						sockets.delete(id);
+						syncLan();
+						if (auth.list().length === 0) onNoDevices?.();
+						return new Response(null, { status: 204 });
+					}),
+				},
+				"/api/state": {
+					GET: paired(() =>
 						Response.json(
-							{ id: sessions.create(body).id } satisfies CreateSessionResponse,
-							{ status: 201 },
+							(study
+								? {
+										folder: study.folder.root,
+										courses: study.sessions.courses(),
+										sessions: study.sessions.list(),
+									}
+								: {
+										folder: null,
+										courses: [],
+										sessions: [],
+									}) satisfies StateResponse,
 						),
 					),
-				),
-			},
-			"/api/sessions/:id": {
-				GET: withStudy((req, { sessions }) =>
-					found(sessions.snapshot(req.params.id)),
-				),
-				PATCH: withStudy((req, { sessions }) =>
-					withBody(req, PatchSessionBody, (body) =>
-						found(sessions.update(req.params.id, body)),
+				},
+				"/api/folder": {
+					POST: paired((req) =>
+						withBody(req, SetFolderBody, (body) => {
+							if (study) {
+								return error(
+									409,
+									"folder_set",
+									"the study folder is already set",
+								);
+							}
+							const chosen = chooseStudyFolder(body.path);
+							if ("code" in chosen) {
+								return error(400, chosen.code, chosen.message);
+							}
+							const opened = open(chosen.dir);
+							try {
+								saveStudyDir?.(opened.folder.root);
+							} catch (cause) {
+								opened.unwatch();
+								throw cause;
+							}
+							study = opened;
+							return Response.json(
+								{ folder: study.folder.root },
+								{ status: 201 },
+							);
+						}),
 					),
-				),
-			},
-			"/api/sessions/:id/messages": {
-				POST: withStudy((req, { sessions }, device) =>
-					withBody(req, SendMessageBody, (body) =>
-						found(sessions.send(req.params.id, body, device.id), 202),
+				},
+				"/api/sessions": {
+					POST: withStudy((req, { sessions }) =>
+						withBody(req, CreateSessionBody, (body) =>
+							Response.json(
+								{
+									id: sessions.create(body).id,
+								} satisfies CreateSessionResponse,
+								{ status: 201 },
+							),
+						),
 					),
-				),
-			},
-			"/api/sessions/:id/notes": {
-				POST: withStudy((req, { sessions }) =>
-					withBody(req, NoteBody, (body) =>
-						found(sessions.note(req.params.id, body), 201),
+				},
+				"/api/sessions/:id": {
+					GET: withStudy((req, { sessions }) =>
+						found(sessions.snapshot(req.params.id)),
 					),
+					PATCH: withStudy((req, { sessions }) =>
+						withBody(req, PatchSessionBody, (body) =>
+							found(sessions.update(req.params.id, body)),
+						),
+					),
+				},
+				"/api/sessions/:id/messages": {
+					POST: withStudy((req, { sessions }, device) =>
+						withBody(req, SendMessageBody, (body) =>
+							found(sessions.send(req.params.id, body, device.id), 202),
+						),
+					),
+				},
+				"/api/sessions/:id/notes": {
+					POST: withStudy((req, { sessions }) =>
+						withBody(req, NoteBody, (body) =>
+							found(sessions.note(req.params.id, body), 201),
+						),
+					),
+				},
+				"/api/sessions/:id/attachments": {
+					POST: withStudy((req, { sessions }) =>
+						withPhoto(req, (bytes, type) =>
+							found(sessions.attach(req.params.id, bytes, type), 201),
+						),
+					),
+				},
+				"/api/sessions/:id/attachments/:attachment": {
+					DELETE: withStudy((req, { sessions }) => {
+						const dropped = sessions.detach(
+							req.params.id,
+							req.params.attachment,
+						);
+						if (dropped === undefined) return found(undefined);
+						return dropped
+							? new Response(null, { status: 204 })
+							: error(404, "not_found", "no such photo waiting");
+					}),
+				},
+				"/api/attachments": {
+					// A photo sent with no session open: it goes to the inbox.
+					POST: withStudy((req, { folder }) =>
+						withPhoto(req, (bytes, type) =>
+							Response.json(
+								saveToInbox(folder, bytes, type) satisfies Attachment,
+								{ status: 201 },
+							),
+						),
+					),
+				},
+				"/api/courses/:course/materials": {
+					GET: withStudy((req, { folder }) =>
+						Response.json({
+							files: materials(folder, req.params.course),
+						} satisfies MaterialsResponse),
+					),
+				},
+				"/files/*": {
+					GET: withStudy((req, { folder }) => serveFile(req, folder)),
+				},
+				"/api/sessions/:id/interrupt": {
+					POST: withStudy(async (req, { sessions }) => {
+						const interrupted = await sessions.interrupt(req.params.id);
+						return found(
+							interrupted === undefined
+								? undefined
+								: ({ interrupted } satisfies InterruptResponse),
+						);
+					}),
+				},
+				"/api/*": paired(() => error(404, "not_found", "no such route")),
+				"/ws": paired((req, device, server: Bun.Server<Socket>) =>
+					server.upgrade(req, { data: { device: device.id } })
+						? undefined
+						: error(400, "bad_request", "expected a WebSocket upgrade"),
 				),
 			},
-			"/api/courses/:course/materials": {
-				GET: withStudy((req, { folder }) =>
-					Response.json({
-						files: materials(folder, req.params.course),
-					} satisfies MaterialsResponse),
-				),
+			websocket: {
+				// A socket that falls this far behind is closed; its client re-subscribes.
+				backpressureLimit: 1024 * 1024,
+				closeOnBackpressureLimit: true,
+				open(ws) {
+					const own = sockets.get(ws.data.device) ?? new Set();
+					sockets.set(ws.data.device, own.add(ws));
+					ws.subscribe(FOLDER_TOPIC);
+				},
+				close(ws) {
+					const own = sockets.get(ws.data.device);
+					own?.delete(ws);
+					if (own?.size === 0) sockets.delete(ws.data.device);
+				},
+				message(ws, raw) {
+					const parsed = ClientMessage.safeParse(parseJson(String(raw)));
+					if (!parsed.success) {
+						return send(ws, {
+							t: "error",
+							code: "bad_request",
+							message: z.prettifyError(parsed.error),
+						});
+					}
+					const { t, session } = parsed.data;
+					if (t === "unsub") return void ws.unsubscribe(topic(session));
+					const snapshot = study?.sessions.snapshot(session);
+					if (!snapshot) {
+						return send(ws, {
+							t: "error",
+							session,
+							code: "not_found",
+							message: "no such session",
+						});
+					}
+					// Same tick: no event can be published between these two lines.
+					send(ws, snapshot);
+					ws.subscribe(topic(session));
+				},
 			},
-			"/files/*": {
-				GET: withStudy((req, { folder }) => serveFile(req, folder)),
-			},
-			"/api/sessions/:id/interrupt": {
-				POST: withStudy(async (req, { sessions }) => {
-					const interrupted = await sessions.interrupt(req.params.id);
-					return found(
-						interrupted === undefined
-							? undefined
-							: ({ interrupted } satisfies InterruptResponse),
-					);
-				}),
-			},
-			"/api/*": paired(() => error(404, "not_found", "no such route")),
-			"/ws": paired((req, device, server: Bun.Server<Socket>) =>
-				server.upgrade(req, { data: { device: device.id } })
-					? undefined
-					: error(400, "bad_request", "expected a WebSocket upgrade"),
-			),
-		},
-		websocket: {
-			// A socket that falls this far behind is closed; its client re-subscribes.
-			backpressureLimit: 1024 * 1024,
-			closeOnBackpressureLimit: true,
-			open(ws) {
-				const own = sockets.get(ws.data.device) ?? new Set();
-				sockets.set(ws.data.device, own.add(ws));
-				ws.subscribe(FOLDER_TOPIC);
-			},
-			close(ws) {
-				const own = sockets.get(ws.data.device);
-				own?.delete(ws);
-				if (own?.size === 0) sockets.delete(ws.data.device);
-			},
-			message(ws, raw) {
-				const parsed = ClientMessage.safeParse(parseJson(String(raw)));
-				if (!parsed.success) {
-					return send(ws, {
-						t: "error",
-						code: "bad_request",
-						message: z.prettifyError(parsed.error),
-					});
+			fetch: (req) =>
+				refused(req) ?? new Response("Not found", { status: 404 }),
+			error(cause) {
+				if (cause instanceof BadRequest) {
+					return error(400, "bad_request", cause.message);
 				}
-				const { t, session } = parsed.data;
-				if (t === "unsub") return void ws.unsubscribe(topic(session));
-				const snapshot = study?.sessions.snapshot(session);
-				if (!snapshot) {
-					return send(ws, {
-						t: "error",
-						session,
-						code: "not_found",
-						message: "no such session",
-					});
-				}
-				// Same tick: no event can be published between these two lines.
-				send(ws, snapshot);
-				ws.subscribe(topic(session));
+				console.error(cause);
+				return error(500, "internal", String(cause));
 			},
-		},
-		fetch: (req) => refused(req) ?? new Response("Not found", { status: 404 }),
-		error(cause) {
-			if (cause instanceof BadRequest) {
-				return error(400, "bad_request", cause.message);
-			}
-			console.error(cause);
-			return error(500, "internal", String(cause));
-		},
-	});
+		});
+	const server = listen(HOST, port);
 	auth.listen(server.port as number);
+	// A phone paired before this start turns LAN mode back on.
+	syncLan();
 	const stop = server.stop.bind(server);
-	// Stopping the server also closes the watcher and the live agents.
+	// Stopping the server also closes the LAN listener, the watcher and the live agents.
 	server.stop = (closeActiveConnections?: boolean) => {
+		for (const timer of expiries) clearTimeout(timer);
+		expiries.clear();
+		lan?.stop(true);
+		lan = null;
 		study?.unwatch();
 		study?.sessions.close();
 		return stop(closeActiveConnections);
@@ -357,8 +491,40 @@ export async function startServer({
 	return server;
 }
 
+/**
+ * A photo upload: `multipart/form-data` with one `photo` file, a JPEG or PNG
+ * by its bytes (whatever its name or declared type says). A cross-site form
+ * can send multipart without a preflight, so this route rests on the Origin
+ * check and the `SameSite=Strict` cookie, not on the content type.
+ */
+async function withPhoto(
+	req: Request,
+	handle: (bytes: Uint8Array, type: PhotoType) => Response | Promise<Response>,
+) {
+	if (!req.headers.get("content-type")?.startsWith("multipart/form-data")) {
+		return error(415, "unsupported_media_type", "send multipart/form-data");
+	}
+	let photo: FormDataEntryValue | null;
+	try {
+		photo = (await req.formData()).get("photo");
+	} catch {
+		return error(400, "bad_request", "send the photo as the field `photo`");
+	}
+	if (!(photo instanceof Blob)) {
+		return error(400, "bad_request", "send the photo as the field `photo`");
+	}
+	if (photo.size > MAX_PHOTO_BYTES) {
+		return error(413, "too_large", "the photo is larger than 3.5 MB");
+	}
+	const bytes = new Uint8Array(await photo.arrayBuffer());
+	const type = sniffPhoto(bytes);
+	if (!type) return error(415, "not_a_photo", "send a JPEG or PNG image");
+	return handle(bytes, type);
+}
+
 const REFUSALS = {
-	bad_host: "this server only answers to 127.0.0.1 and localhost",
+	bad_host:
+		"this server only answers to 127.0.0.1, localhost and, with a phone paired, its LAN address",
 	bad_origin: "requests from other sites are refused",
 } as const;
 

@@ -22,6 +22,17 @@ export const Anchor = z.object({
 });
 export type Anchor = z.infer<typeof Anchor>;
 
+/**
+ * A photo saved in the study folder (`POST /api/sessions/:id/attachments`).
+ * It waits in the session's `attachments` until a message takes it to Claude.
+ */
+export const Attachment = z.object({
+	id: z.string(),
+	/** Relative to the study root, like `algebra/sessions/2026-11-25-x/001-photo.jpg`. */
+	path: z.string(),
+});
+export type Attachment = z.infer<typeof Attachment>;
+
 /** A session's front matter, as clients see it. */
 export const SessionMeta = z.object({
 	id: z.string(),
@@ -59,7 +70,8 @@ export const UserMessageEvent = z.object({
 	from: z.string(),
 	text: z.string(),
 	anchor: Anchor.optional(),
-	attachments: z.array(z.string()),
+	/** The photos it takes to Claude, out of the session's waiting ones. */
+	attachments: z.array(Attachment),
 	/** True when another turn was running or waiting when it arrived. */
 	queued: z.boolean(),
 });
@@ -69,6 +81,12 @@ export const NoteEvent = z.object({
 	id: z.string(),
 	anchor: Anchor,
 	text: z.string().optional(),
+});
+
+/** The photos waiting for the next message changed (one arrived or was dropped). */
+export const AttachmentsEvent = z.object({
+	type: z.literal("attachments"),
+	pending: z.array(Attachment),
 });
 
 export const TurnStartEvent = z.object({
@@ -127,6 +145,7 @@ export const ErrorEvent = z.object({
 export const SessionEvent = z.discriminatedUnion("type", [
 	UserMessageEvent,
 	NoteEvent,
+	AttachmentsEvent,
 	TurnStartEvent,
 	BlockStartEvent,
 	DeltaEvent,
@@ -182,6 +201,8 @@ export const SessionView = z.object({
 	/** Messages waiting for their turn, in arrival order. */
 	queue: z.array(UserMessage),
 	notes: z.array(Note),
+	/** Photos uploaded since the last message, which the next one takes. */
+	attachments: z.array(Attachment),
 	/** The running or last turn's error; cleared when the next turn starts. */
 	error: ErrorEvent.omit({ type: true }).optional(),
 });
@@ -261,12 +282,17 @@ export const PatchSessionBody = z
 	});
 export type PatchSessionBody = z.infer<typeof PatchSessionBody>;
 
-export const SendMessageBody = z.object({
-	clientMsgId: z.string().min(1).max(100),
-	text: z.string().min(1).max(100_000),
-	anchor: Anchor.optional(),
-	attachmentIds: z.array(z.string()).max(20).optional(),
-});
+export const SendMessageBody = z
+	.object({
+		clientMsgId: z.string().min(1).max(100),
+		text: z.string().max(100_000),
+		anchor: Anchor.optional(),
+		/** Waiting photos to send with it; ids no longer waiting are skipped. */
+		attachmentIds: z.array(z.string()).max(20).optional(),
+	})
+	.refine((b) => b.text.trim() !== "" || (b.attachmentIds?.length ?? 0) > 0, {
+		message: "send some text or a photo",
+	});
 export type SendMessageBody = z.infer<typeof SendMessageBody>;
 
 export const SendMessageResponse = z.object({
@@ -327,6 +353,8 @@ export const Device = z.object({
 	/** From its User-Agent when it paired, like "Chrome en macOS". */
 	name: z.string(),
 	created: z.string(),
+	/** Paired by QR over the LAN (a phone); while one is paired, LAN mode stays on. */
+	lan: z.boolean().optional(),
 });
 export type Device = z.infer<typeof Device>;
 
@@ -336,6 +364,14 @@ export const DevicesResponse = z.object({
 	current: z.string(),
 });
 export type DevicesResponse = z.infer<typeof DevicesResponse>;
+
+/** `POST /pair/:code`: where the browser goes once paired. */
+export const RedeemResponse = z.object({ next: z.string() });
+export type RedeemResponse = z.infer<typeof RedeemResponse>;
+
+/** `POST /api/pair`: `lan` asks for a phone's link, on the LAN origin. */
+export const PairBody = z.object({ lan: z.boolean().optional() });
+export type PairBody = z.infer<typeof PairBody>;
 
 /** `POST /api/pair`: a one-time link for another browser. */
 export const PairResponse = z.object({

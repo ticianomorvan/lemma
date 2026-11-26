@@ -31,23 +31,26 @@ test("a link from Dispositivos pairs another browser once, then says it no longe
 	expect(url).toMatch(/^http:\/\/127\.0\.0\.1:4318\/pair\/[\w-]{22}$/);
 
 	const other = await unpaired(browser);
+	// Fetching the link without running the page (a chat app's preview, a
+	// prefetch) spends nothing.
+	expect(
+		(await other.request.get(url)).headers()["set-cookie"],
+	).toBeUndefined();
 	const second = await other.newPage();
 	await second.goto(url);
 	await expect(second).toHaveURL(/\/s\/[\w-]+$/);
-	await expect(second.getByLabel("Mensaje")).toBeVisible();
+	await expect(second.getByRole("tablist", { name: "Vista" })).toBeVisible();
 
-	// Used once: the same link now shows the expired screen with a 403.
+	// Used once: the same link now shows the expired screen.
 	const fresh = await (await unpaired(browser)).newPage();
-	const reused = await fresh.goto(url);
-	expect(reused?.status()).toBe(403);
+	await fresh.goto(url);
 	await expect(
 		fresh.getByRole("heading", { name: "Este enlace ya no sirve" }),
 	).toBeVisible();
-	// The paired browser opening it again is told it can go on.
+	// The paired browser opening it again just goes on.
 	await second.goto(url);
-	await expect(second.getByRole("link", { name: "Abrir Lemma" })).toBeVisible();
-	await second.getByRole("link", { name: "Abrir Lemma" }).click();
 	await expect(second).toHaveURL(/\/s\/[\w-]+$/);
+	await expect(second.getByRole("tablist", { name: "Vista" })).toBeVisible();
 	await other.close();
 	await fresh.context().close();
 });
@@ -61,7 +64,7 @@ test("unpairing a browser from another one sends it to the pairing screen", asyn
 	const other = await unpaired(browser);
 	const second = await other.newPage();
 	await second.goto(url);
-	await expect(second.getByLabel("Mensaje")).toBeVisible();
+	await expect(second.getByRole("tablist", { name: "Vista" })).toBeVisible();
 	const { current } = (await (
 		await second.request.get("/api/devices")
 	).json()) as { current: string };

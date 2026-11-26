@@ -6,7 +6,11 @@ import { MessagesSquare, PanelRightClose, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { cn } from "#lib/utils.ts";
 import type { Anchor } from "../../shared/protocol.ts";
-import type { SessionState, SessionStore } from "../store.ts";
+import {
+	photoActions,
+	type SessionState,
+	type SessionStore,
+} from "../store.ts";
 import type { ComposerDraft } from "../thread/hooks.ts";
 import { cellId, type ThreadActions } from "../thread/model.ts";
 import { Citation, Thread } from "../thread/thread.tsx";
@@ -37,12 +41,13 @@ export function ChatPanel({
 }) {
 	const actions = useMemo<ThreadActions>(
 		() => ({
-			send: (text) => {
-				void store.send(text, pending);
+			send: (text, attachmentIds) => {
+				void store.send(text, pending, attachmentIds);
 				onPendingClear();
 			},
 			stop: () => void store.interrupt(),
 			discard: (clientMsgId) => store.discard(clientMsgId),
+			...photoActions(store),
 		}),
 		[store, pending, onPendingClear],
 	);

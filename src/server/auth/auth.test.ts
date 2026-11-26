@@ -13,6 +13,7 @@ import {
 	Client,
 	cleanUp,
 	pair,
+	redeem,
 	type Server,
 	serve,
 	start,
@@ -119,12 +120,12 @@ test("a foreign Host header gets a 403 everywhere, pairing and static files incl
 		const res = await api("/api/state", undefined, "GET", { host });
 		expect(res.status).toBe(403);
 		expect(await errorCode(res)).toBe("bad_host");
-		const pairing = await fetch(url, { headers: { host }, redirect: "manual" });
+		const pairing = await redeem(url, { host });
 		expect(pairing.status).toBe(403);
 		expect(await upgradeStatus(server, { host })).toBe(403);
 	}
 	// The code survived: a refused request never reached it.
-	expect((await fetch(url, { redirect: "manual" })).status).toBe(303);
+	expect((await redeem(url)).status).toBe(200);
 	// localhost is ours too.
 	const local = await api("/api/state", undefined, "GET", {
 		host: `localhost:${server.port}`,
@@ -161,9 +162,12 @@ test("a pairing code works once, then gets a 403", async () => {
 	);
 	expect(Date.parse(expiresAt) - Date.now()).toBeCloseTo(CODE_TTL_MS, -4);
 
-	const first = await fetch(url, { redirect: "manual" });
-	expect(first.status).toBe(303);
-	expect(first.headers.get("location")).toBe("/");
+	// Opening the link only loads the page: a preview or prefetch spends nothing.
+	const opened = await fetch(url, { redirect: "manual" });
+	expect(opened.headers.get("set-cookie")).toBeNull();
+	const first = await redeem(url);
+	expect(first.status).toBe(200);
+	expect(await first.json()).toEqual({ next: "/" });
 	const cookie = first.headers.get("set-cookie") ?? "";
 	expect(cookie).toMatch(
 		new RegExp(`^lemma-${server.port}=[\\w-]{43}; .*HttpOnly`, "i"),
@@ -171,13 +175,18 @@ test("a pairing code works once, then gets a 403", async () => {
 	expect(cookie).toMatch(/SameSite=Strict/i);
 	expect(cookie).toMatch(/Path=\//);
 
-	const again = await fetch(url, { redirect: "manual" });
+	const again = await redeem(url);
 	expect(again.status).toBe(403);
+	expect(await errorCode(again)).toBe("bad_code");
 	expect(again.headers.get("set-cookie")).toBeNull();
-	const made = await fetch(new URL("/pair/not-a-code", server.url), {
-		redirect: "manual",
-	});
+	const made = await redeem(new URL("/pair/not-a-code", server.url));
 	expect(made.status).toBe(403);
+	// Another site can't redeem a code for the browser it runs in.
+	const foreign = await redeem(authOf(server).startPairing().url, {
+		origin: "http://evil.test",
+	});
+	expect(foreign.status).toBe(403);
+	expect(await errorCode(foreign)).toBe("bad_origin");
 });
 
 test("a pairing code expires after 5 minutes", async () => {
@@ -244,20 +253,22 @@ test("POST /api/pair hands a paired device a link for another browser", async ()
 	const res = await api("/api/pair", {});
 	expect(res.status).toBe(201);
 	const { url } = (await res.json()) as { url: string };
-	const second = await fetch(url, { redirect: "manual" });
-	expect(second.status).toBe(303);
+	const second = await redeem(url);
+	expect(second.status).toBe(200);
 	expect(authOf(server).list()).toHaveLength(2);
 });
 
 test("opening a link in a browser that is already paired adds no device", async () => {
 	const { server, cookie } = await serve({ streams: ["math"] });
 	const { url } = authOf(server).startPairing();
-	const res = await fetch(url, { redirect: "manual", headers: { cookie } });
-	expect(res.status).toBe(303);
+	const res = await redeem(url, { cookie });
+	expect(res.status).toBe(200);
 	expect(res.headers.get("set-cookie")).toBeNull();
 	expect(authOf(server).list()).toHaveLength(1);
-	// The code is spent all the same.
-	expect((await fetch(url, { redirect: "manual" })).status).toBe(403);
+	// The code is spent all the same, but this browser still gets in: a link
+	// opened twice (or spent by a prerender) isn't a dead end.
+	expect((await redeem(url)).status).toBe(403);
+	expect((await redeem(url, { cookie })).status).toBe(200);
 });
 
 test("devices.json keeps only token hashes, private to the user, across restarts", async () => {
@@ -379,4 +390,57 @@ test("device names come from the User-Agent", () => {
 		),
 	).toBe("Chrome en iPhone");
 	expect(deviceName("curl/8.7.1")).toBe("Navegador");
+});
+
+test("LAN mode: the LAN origin is ours only while it's on, and a phone's code keeps it on", () => {
+	let now = Date.parse("2026-11-25T10:00:00Z");
+	const auth = new Auth({ dir: "/nonexistent", now: () => now }).listen(4317);
+	const lan = "http://192.168.0.242:4317";
+	const fromLan = new Request(`${lan}/api/state`, {
+		headers: { host: "192.168.0.242:4317", origin: lan },
+	});
+	expect(auth.refuse(fromLan)).toBe("bad_host");
+	expect(() => auth.startPairing({ lan: true })).toThrow("LAN mode is off");
+	expect(auth.wantsLan()).toBe(false);
+
+	auth.setLan("192.168.0.242");
+	expect(auth.lan).toBe(lan);
+	expect(auth.refuse(fromLan)).toBeNull();
+	const { url } = auth.startPairing({ lan: true });
+	expect(url).toStartWith(`${lan}/pair/`);
+	// Desktop links stay on loopback.
+	expect(auth.startPairing().url).toStartWith("http://127.0.0.1:4317/pair/");
+	expect(auth.wantsLan()).toBe(true);
+	now += CODE_TTL_MS;
+	expect(auth.wantsLan()).toBe(false);
+
+	auth.setLan(null);
+	expect(auth.refuse(fromLan)).toBe("bad_host");
+	// IPv6 hosts are bracketed.
+	auth.setLan("::1");
+	expect(auth.lan).toBe("http://[::1]:4317");
+});
+
+test("a device paired with a LAN code is a phone, and keeps LAN mode on across restarts", async () => {
+	const dir = await studyDir();
+	const auth = new Auth({ dir }).listen(4317);
+	auth.setLan("192.168.0.242");
+	const code = auth
+		.startPairing({ lan: true })
+		.url.split("/pair/")[1] as string;
+	const phone = auth.redeem(
+		code,
+		new Request("http://192.168.0.242:4317/", {
+			headers: { host: "192.168.0.242:4317" },
+		}),
+	);
+	expect(phone?.device.lan).toBe(true);
+	const desktop = auth.startPairing().url.split("/pair/")[1] as string;
+	expect(
+		auth.redeem(desktop, new Request("http://127.0.0.1:4317/"))?.device.lan,
+	).toBeUndefined();
+	const restarted = new Auth({ dir }).listen(4317);
+	expect(restarted.wantsLan()).toBe(true);
+	restarted.revoke(phone?.device.id as string);
+	expect(restarted.wantsLan()).toBe(false);
 });

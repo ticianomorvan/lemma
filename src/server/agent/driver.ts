@@ -34,14 +34,23 @@ export interface AgentSession {
 	sdkSessionId: string;
 	/** Whether it continued a saved session. */
 	resumed: boolean;
-	/** Sends one user message. Call again only after the previous `turn_end`. */
-	push(text: string): void;
+	/**
+	 * Sends one user message, with photos as `image` blocks ahead of its text.
+	 * Call again only after the previous `turn_end`.
+	 */
+	push(text: string, images?: AgentImage[]): void;
 	/** Stops the running turn, which then ends with `reason: interrupted`. */
 	interrupt(): Promise<void>;
 	/** Ends the conversation; `events` finishes. */
 	close(): void;
 	events: AsyncIterable<AgentEvent>;
 }
+
+/** A photo for Claude: its bytes, base64, and its type. */
+export type AgentImage = {
+	mediaType: "image/jpeg" | "image/png";
+	data: string;
+};
 
 /** Session events without the ids that only the sessions module knows. */
 export type AgentEvent =

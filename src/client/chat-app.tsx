@@ -2,7 +2,8 @@
  * The app shell: one session at a time, addressed by its URL (`/s/<id>`), so
  * every client that opens the same URL sees the same thread.
  * - A browser that isn't paired gets the pairing screen (the server refuses
- *   it everything else), and so does a used or expired `/pair/<code>` link.
+ *   it everything else), and so does a used or expired `/pair/<code>` link
+ *   (the page redeems it with a POST; a paired browser always gets in).
  * - Until the study folder is chosen, the first-run screen.
  * - `/` reopens the session used last, or starts one when there is none.
  * - A session shows as Read (its course's PDF with the thread beside it) or
@@ -32,12 +33,12 @@ import type {
 import { DevicesMenu } from "./devices-menu.tsx";
 import { FolderSetup } from "./folder-setup.tsx";
 import { type Layout, useLayout } from "./layout.ts";
-import { isPairingPath, PairingScreen } from "./pairing.tsx";
+import { isPairingPath, PairingScreen, redeemLink } from "./pairing.tsx";
 import { PracticeView } from "./practice/practice-view.tsx";
 import type { PagePlace } from "./read/anchors.ts";
 import type { Material, ReadMemory } from "./read/read-view.tsx";
 import { SessionsMenu } from "./sessions-menu.tsx";
-import { SessionStore, useSession } from "./store.ts";
+import { photoActions, SessionStore, useSession } from "./store.ts";
 import type { ThreadPlace } from "./thread/hooks.ts";
 import type { ThreadActions } from "./thread/model.ts";
 import { isUnpaired } from "./unpaired.ts";
@@ -61,10 +62,8 @@ export function ChatApp() {
 	const [id, setId] = useState(sessionFromPath);
 	const [meta, setMeta] = useState<SessionMeta>();
 	const [screen, setScreen] = useState<
-		"app" | "setup" | "failed" | "unpaired" | "expired"
-	>(isPairingPath() ? "expired" : "app");
-	/** On the expired-link screen: whether this browser is paired anyway (undefined while asking). */
-	const [paired, setPaired] = useState<boolean>();
+		"app" | "setup" | "failed" | "unpaired" | "pairing" | "expired" | "offline"
+	>(isPairingPath() ? "pairing" : "app");
 	const unpair = useCallback(() => {
 		history.replaceState(null, "", "/");
 		setScreen("unpaired");
@@ -105,9 +104,15 @@ export function ChatApp() {
 		let cancelled = false;
 		void (async () => {
 			try {
+				if (isPairingPath()) {
+					const next = await redeemLink().catch(() => "offline" as const);
+					if (cancelled) return;
+					if (next === "offline") return setScreen("offline");
+					// A full load, so this page starts over with its new cookie.
+					return next ? location.replace(next) : setScreen("expired");
+				}
 				const state = await loadState();
 				if (cancelled) return;
-				if (isPairingPath()) return setPaired(true);
 				if (state.folder === null) return setScreen("setup");
 				if (id) return;
 				const latest = state.sessions.toSorted((a, b) =>
@@ -118,7 +123,6 @@ export function ChatApp() {
 				if (!cancelled) open(target, setId, "replace");
 			} catch (error) {
 				if (cancelled) return;
-				if (isPairingPath()) return setPaired(false);
 				setScreen(error instanceof Unpaired ? "unpaired" : "failed");
 			}
 		})();
@@ -148,11 +152,11 @@ export function ChatApp() {
 	if (screen === "setup") {
 		return <FolderSetup onDone={retry} onUnpaired={unpair} />;
 	}
-	if (screen === "expired") {
-		// Rendered once the state answers, so the card doesn't swap its text.
-		return paired === undefined ? null : (
-			<PairingScreen kind="expired" paired={paired} />
-		);
+	// Redeeming takes one request; nothing to show meanwhile.
+	if (screen === "pairing") return null;
+	if (screen === "expired") return <PairingScreen kind="expired" />;
+	if (screen === "offline") {
+		return <PairingScreen kind="offline" onRetry={() => location.reload()} />;
 	}
 	if (screen === "unpaired") {
 		return <PairingScreen kind="unpaired" onRetry={retry} />;
@@ -268,9 +272,11 @@ function Live({
 	const state = useSession(store);
 	const actions = useMemo<ThreadActions>(
 		() => ({
-			send: (text) => void store.send(text),
+			send: (text, attachmentIds) =>
+				void store.send(text, undefined, attachmentIds),
 			stop: () => void store.interrupt(),
 			discard: (clientMsgId) => store.discard(clientMsgId),
+			...photoActions(store),
 		}),
 		[store],
 	);

@@ -7,7 +7,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import type { ThreadActions } from "./model.ts";
 
 const coarse = () =>
 	typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
@@ -21,17 +20,19 @@ export type ComposerDraft = { text: string; setText: (text: string) => void };
  * The text lives in `draft`, so a session's views share it.
  */
 export function useComposer(
-	actions: Pick<ThreadActions, "send">,
+	actions: { send: (text: string) => void },
 	{ text, setText }: ComposerDraft,
+	/** Photos are waiting: a message may be sent with no text. */
+	photos = false,
 ) {
 	const ref = useRef<HTMLTextAreaElement>(null);
-	const canSend = text.trim().length > 0;
+	const canSend = text.trim().length > 0 || photos;
 	const submit = useCallback(() => {
-		if (!text.trim()) return;
+		if (!canSend) return;
 		actions.send(text.trim());
 		setText("");
 		ref.current?.focus();
-	}, [text, actions, setText]);
+	}, [text, canSend, actions, setText]);
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.nativeEvent.isComposing) return;
 		if (e.key === "Enter" && !e.shiftKey && !coarse()) {

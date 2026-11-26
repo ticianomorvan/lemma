@@ -6,6 +6,11 @@
  */
 import { BookOpen, NotebookPen } from "lucide-react";
 import { useEffect } from "react";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "#components/ui/popover.tsx";
 import { Tabs, TabsList, TabsTrigger } from "#components/ui/tabs.tsx";
 import {
 	Tooltip,
@@ -70,25 +75,46 @@ export function ViewSwitch({
 				{!iconOnly && label}
 			</TabsTrigger>
 		);
-		return iconOnly && !off ? (
-			<span key={value}>{trigger}</span>
-		) : (
+		if (iconOnly && !off) return <span key={value}>{trigger}</span>;
+		// A disabled tab takes no pointer events, so its wrapper opens the tip.
+		const wrapper = (
+			<span className="[&_button:disabled]:pointer-events-none" />
+		);
+		const why = (
+			<>
+				<span className="font-medium">Este curso no tiene apuntes</span>
+				<span className="opacity-80">
+					Copiá los PDFs del curso a {noPdfsIn}/materials/, en la carpeta de
+					estudio.
+				</span>
+			</>
+		);
+		// Touch can't hover: on a phone the tip is a tap away instead.
+		if (iconOnly) {
+			return (
+				<Popover key={value}>
+					<PopoverTrigger
+						nativeButton={false}
+						aria-label={`${label}: este curso no tiene apuntes`}
+						render={wrapper}
+					>
+						{trigger}
+					</PopoverTrigger>
+					<PopoverContent
+						align="start"
+						className="w-[min(256px,calc(100vw-24px))] gap-1 text-[13px]"
+					>
+						{why}
+					</PopoverContent>
+				</Popover>
+			);
+		}
+		return (
 			<Tooltip key={value}>
-				{/* A disabled tab takes no pointer events, so its wrapper shows the tip. */}
-				<TooltipTrigger
-					render={<span className="[&_button:disabled]:pointer-events-none" />}
-				>
-					{trigger}
-				</TooltipTrigger>
+				<TooltipTrigger render={wrapper}>{trigger}</TooltipTrigger>
 				<TooltipContent className={cn(off && "max-w-64 flex-col items-start")}>
 					{off ? (
-						<>
-							<span className="font-medium">Este curso no tiene apuntes</span>
-							<span className="opacity-80">
-								Copiá los PDFs del curso a {noPdfsIn}/materials/, en la carpeta
-								de estudio.
-							</span>
-						</>
+						why
 					) : (
 						<>
 							{label}

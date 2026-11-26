@@ -14,12 +14,15 @@
 import { useSyncExternalStore } from "react";
 import {
 	type Anchor,
+	type Attachment,
 	type NoteBody,
 	type SendMessageBody,
 	ServerMessage,
 	type SessionView,
 } from "../shared/protocol.ts";
 import { apply } from "../shared/reducer.ts";
+import { downscale } from "./photos/downscale.ts";
+import { randomId } from "./random-id.ts";
 import { isUnpaired } from "./unpaired.ts";
 
 /** A message this client sent that the server hasn't broadcast back yet. */
@@ -27,7 +30,22 @@ export type Outgoing = {
 	clientMsgId: string;
 	text: string;
 	anchor?: Anchor;
+	/** The waiting photos it takes. */
+	attachments: Attachment[];
 	/** Set when the POST failed. */
+	failed?: string;
+};
+
+/**
+ * A photo this client is sending: shown from its local copy until the
+ * server's `attachments` event lists it (then `id` is set and it goes).
+ */
+export type Upload = {
+	key: string;
+	/** A `blob:` URL of the downscaled photo. */
+	preview: string;
+	/** The server's id, once the POST answered. */
+	id?: string;
 	failed?: string;
 };
 
@@ -39,12 +57,17 @@ export type SessionState = {
 	connection: "connecting" | "live" | "offline" | "missing" | "unpaired";
 	view?: SessionView;
 	outgoing: Outgoing[];
+	uploads: Upload[];
 };
 
 type Listener = () => void;
 
 export class SessionStore {
-	private state: SessionState = { connection: "connecting", outgoing: [] };
+	private state: SessionState = {
+		connection: "connecting",
+		outgoing: [],
+		uploads: [],
+	};
 	private readonly listeners = new Set<Listener>();
 	private socket?: WebSocket;
 	private seq = 0;
@@ -70,14 +93,26 @@ export class SessionStore {
 	getSnapshot = () => this.state;
 
 	/**
-	 * Sends a message, quoting `anchor` when given; it shows as outgoing until
-	 * the server broadcasts it.
+	 * Sends a message, quoting `anchor` when given and taking the waiting
+	 * photos in `attachmentIds`; it shows as outgoing until the server
+	 * broadcasts it.
 	 */
-	async send(text: string, anchor?: Anchor) {
-		const clientMsgId = crypto.randomUUID();
+	async send(text: string, anchor?: Anchor, attachmentIds: string[] = []) {
+		const clientMsgId = randomId();
+		const ids = new Set(attachmentIds);
+		const attachments = (this.state.view?.attachments ?? []).filter((a) =>
+			ids.has(a.id),
+		);
 		const message = { clientMsgId, text, ...(anchor ? { anchor } : {}) };
-		this.set({ outgoing: [...this.state.outgoing, message] });
-		const body: SendMessageBody = message;
+		this.set({
+			outgoing: [...this.state.outgoing, { ...message, attachments }],
+		});
+		const body: SendMessageBody = {
+			...message,
+			...(attachments.length
+				? { attachmentIds: attachments.map((a) => a.id) }
+				: {}),
+		};
 		try {
 			const res = await fetch(`/api/sessions/${this.id}/messages`, {
 				method: "POST",
@@ -116,6 +151,63 @@ export class SessionStore {
 		}
 	}
 
+	/**
+	 * Downscales a photo (JPEG, long edge at most 2048 px) and uploads it to
+	 * the session, where it waits for the next message on every client.
+	 */
+	async upload(file: Blob) {
+		const key = randomId();
+		let photo: Blob;
+		try {
+			photo = await downscale(file);
+		} catch {
+			this.set({
+				uploads: [
+					...this.state.uploads,
+					{ key, preview: "", failed: "No se pudo leer la foto" },
+				],
+			});
+			return;
+		}
+		const preview = URL.createObjectURL(photo);
+		this.set({ uploads: [...this.state.uploads, { key, preview }] });
+		const patch = (change: Partial<Upload>) =>
+			this.set({
+				uploads: this.state.uploads.map((u) =>
+					u.key === key ? { ...u, ...change } : u,
+				),
+			});
+		try {
+			const form = new FormData();
+			form.append("photo", photo, "photo.jpg");
+			const res = await fetch(`/api/sessions/${this.id}/attachments`, {
+				method: "POST",
+				body: form,
+			});
+			if (await isUnpaired(res)) this.unpaired();
+			if (!res.ok) throw new Error(await errorMessage(res));
+			patch({ id: ((await res.json()) as Attachment).id });
+		} catch (error) {
+			patch({ failed: String((error as Error).message ?? error) });
+		}
+	}
+
+	/** Forgets a failed upload. */
+	dismissUpload(key: string) {
+		const upload = this.state.uploads.find((u) => u.key === key);
+		if (upload?.preview) URL.revokeObjectURL(upload.preview);
+		this.set({ uploads: this.state.uploads.filter((u) => u.key !== key) });
+	}
+
+	/** Drops a waiting photo, for every client. */
+	async drop(attachmentId: string) {
+		const res = await fetch(
+			`/api/sessions/${this.id}/attachments/${encodeURIComponent(attachmentId)}`,
+			{ method: "DELETE" },
+		).catch(() => null);
+		if (res && (await isUnpaired(res))) this.unpaired();
+	}
+
 	/** Drops a failed outgoing message, returning its text for the composer. */
 	discard(clientMsgId: string) {
 		const message = this.state.outgoing.find(
@@ -138,6 +230,9 @@ export class SessionStore {
 
 	close() {
 		this.closed = true;
+		for (const u of this.state.uploads) {
+			if (u.preview) URL.revokeObjectURL(u.preview);
+		}
 		clearTimeout(this.retryTimer);
 		this.socket?.close();
 	}
@@ -223,6 +318,19 @@ export class SessionStore {
 			const outgoing = next.outgoing.filter((m) => !seen.has(m.clientMsgId));
 			if (outgoing.length !== next.outgoing.length) next.outgoing = outgoing;
 		}
+		// Uploads the server now lists (or a message already took) are done.
+		if (next.view && next.uploads.some((u) => u.id)) {
+			const known = new Set([
+				...next.view.attachments.map((a) => a.id),
+				...sentAttachments(next.view),
+			]);
+			const uploads = next.uploads.filter((u) => {
+				const done = u.id !== undefined && known.has(u.id);
+				if (done) URL.revokeObjectURL(u.preview);
+				return !done;
+			});
+			if (uploads.length !== next.uploads.length) next.uploads = uploads;
+		}
 		this.state = next;
 		for (const listener of this.listeners) listener();
 	}
@@ -239,6 +347,15 @@ function sentIds(view: SessionView) {
 	return ids;
 }
 
+function sentAttachments(view: SessionView) {
+	const users = [
+		...view.turns.map((t) => t.user),
+		...(view.inflight ? [view.inflight.user] : []),
+		...view.queue,
+	];
+	return users.flatMap((u) => u.attachments.map((a) => a.id));
+}
+
 function defaultSocketUrl() {
 	const { protocol, host } = window.location;
 	return `${protocol === "https:" ? "wss" : "ws"}://${host}/ws`;
@@ -252,6 +369,15 @@ async function errorMessage(res: Response) {
 		return `HTTP ${res.status}`;
 	}
 }
+
+/** The thread's photo actions, on a session's store. */
+export const photoActions = (store: SessionStore) => ({
+	upload: (files: File[]) => {
+		for (const file of files) void store.upload(file);
+	},
+	drop: (id: string) => void store.drop(id),
+	dismissUpload: (key: string) => store.dismissUpload(key),
+});
 
 export function useSession(store: SessionStore): SessionState {
 	return useSyncExternalStore(store.subscribe, store.getSnapshot);
