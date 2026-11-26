@@ -285,6 +285,10 @@
 		   would otherwise overflow and show a scrollbar. */
 		padding: 2px 4px;
 	}
+	/* Math in a session title (header, session list, print heading): the text's size, not KaTeX's 1.21em. */
+	.title-math .katex {
+		font-size: 1.05em;
+	}
 	/* The student's question: sans, like the UI, not the reading serif. */
 	.answer.question {
 		font-family: var(--font-sans);

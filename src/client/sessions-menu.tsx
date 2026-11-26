@@ -4,7 +4,7 @@
  * the folder fresh each time it opens.
  */
 import { ChevronDown, Plus } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Input } from "#components/ui/input.tsx";
 import {
 	Popover,
@@ -13,16 +13,20 @@ import {
 } from "#components/ui/popover.tsx";
 import { cn } from "#lib/utils.ts";
 import type { SessionSummary, StateResponse } from "../shared/protocol.ts";
+import { Title, titleText } from "./markdown/lazy.tsx";
 
 export function SessionsMenu({
 	current,
 	label,
+	hint,
 	loadState,
 	onOpen,
 	onCreate,
 }: {
 	current: string | null;
-	label: string;
+	label: ReactNode;
+	/** The label as plain text, for its tooltip. */
+	hint: string;
 	loadState: () => Promise<StateResponse>;
 	onOpen: (id: string) => void;
 	/** Resolves false when the server refused the course name. */
@@ -63,7 +67,7 @@ export function SessionsMenu({
 			}}
 		>
 			<PopoverTrigger
-				title={label}
+				title={hint}
 				className="inline-flex h-8 min-w-0 max-w-[min(100%,480px)] items-center gap-1 rounded-lg px-2 text-[13px] text-muted-foreground transition-[transform,color,background-color] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97] aria-expanded:bg-muted aria-expanded:text-foreground"
 			>
 				<span className="truncate">{label}</span>
@@ -106,7 +110,7 @@ export function SessionsMenu({
 								key={s.id}
 								type="button"
 								aria-current={s.id === current ? "page" : undefined}
-								title={s.title || undefined}
+								title={s.title ? titleText(s.title) : undefined}
 								// The open session starts in view, however long the list.
 								ref={
 									s.id === current
@@ -121,7 +125,7 @@ export function SessionsMenu({
 								)}
 							>
 								<span className="min-w-0 flex-1 truncate">
-									{s.title || "Sin título"}
+									<Title title={s.title} />
 								</span>
 								<time
 									dateTime={s.updated}

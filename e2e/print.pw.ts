@@ -17,7 +17,9 @@ const STUDY = ".e2e/study";
 const NAME = "2026-11-26-impresa";
 const ID = "5e551000-0000-4000-8000-00000000c0de";
 const CHART_ID = "5e551000-0000-4000-8000-00000000c0df";
-const TITLE = "Contrarrecíproco y la normal";
+/** Stored with its math; shown rendered, and as plain text in the tab and file name. */
+const TITLE = "Contrarrecíproco y $X\\sim N(0{,}5;\\,1)$";
+const TITLE_PLAIN = "Contrarrecíproco y X∼N(0,5; 1)";
 const PHOTO = `${COURSE}/sessions/${NAME}/001-photo.png`;
 const PDF = `${COURSE}/materials/apunte.pdf`;
 
@@ -128,7 +130,7 @@ function sessionMd() {
 			`## Tú\n\n${t.q}${t.photo ? `\n\n![Foto](../../${PHOTO})` : ""}\n\n## Claude\n\n${t.a}\n`,
 	).join("\n");
 	const note = `## Nota\n\n> [!note] [apunte.pdf, p. 3](../../${PDF}#page=3)\n> > Teorema 3. Toda sucesion convergente es acotada.\n>\n> Repasar la demostración para el parcial.\n`;
-	return `---\nid: ${ID}\ncourse: ${COURSE}\ntitle: "${TITLE}"\ncreated: 2026-11-26T15:00:00.000Z\n---\n\n${body}\n${note}`;
+	return `---\nid: ${ID}\ncourse: ${COURSE}\ntitle: ${JSON.stringify(TITLE)}\ncreated: 2026-11-26T15:00:00.000Z\n---\n\n${body}\n${note}`;
 }
 
 /** A 600×400 "photo", drawn in the browser. */
@@ -197,6 +199,12 @@ async function open(page: Page, view: "read" | "practice", id = ID) {
 	await expect(
 		page.getByRole("button", { name: "Imprimir", exact: true }),
 	).toBeVisible();
+	if (id === ID) {
+		// The header renders the title's math; its tooltip is plain text.
+		const label = page.locator("header [data-slot=popover-trigger]").first();
+		await expect(label.locator(".katex")).toHaveCount(1);
+		await expect(label).toHaveAttribute("title", `${COURSE} · ${TITLE_PLAIN}`);
+	}
 	return violations;
 }
 
@@ -216,7 +224,9 @@ async function expectPrintable(page: Page) {
 	await expect(page.locator("#composer")).toBeHidden();
 	await expect(page.locator("#root")).toBeHidden();
 
-	await expect(root.locator("h1")).toHaveText(TITLE);
+	await expect(root.locator("h1")).toContainText("Contrarrecíproco y");
+	await expect(root.locator("h1 .katex")).toHaveCount(1);
+	expect(await root.locator("h1").textContent()).not.toContain("$");
 	await expect(root.locator(".print-head")).toContainText(
 		"imprimir · 26 de noviembre de 2026",
 	);
@@ -296,7 +306,7 @@ test("Imprimir prints the Practice thread as a light document, every block drawn
 	expect(await dark(".print-root")).toBe(false);
 
 	// The PDF's default file name is the session's title, until the dialog closes.
-	await expect(page).toHaveTitle(`${TITLE} · ${COURSE}`);
+	await expect(page).toHaveTitle(`${TITLE_PLAIN} · ${COURSE}`);
 
 	// The dialog closing unmounts the copy; the screen is as it was.
 	await page.emulateMedia({ media: "screen" });

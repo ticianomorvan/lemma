@@ -1,3 +1,4 @@
+import katex from "katex";
 import { memo } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -5,6 +6,10 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { normalizeMath, PENDING_MATH } from "../../shared/normalize-math.ts";
+import { plainPart, titleParts } from "../../shared/title.ts";
+
+export { plainTitle } from "../../shared/title.ts";
+
 import { DiagramBlock } from "../blocks/block.tsx";
 import { isBlockKind } from "../blocks/kinds.ts";
 import { rehypeMathGlue } from "./glue.ts";
@@ -88,5 +93,28 @@ export const Markdown = memo(function Markdown({
 		>
 			{normalizeMath(question ? text.replace(/<!--[\s\S]*?-->/g, "") : text)}
 		</ReactMarkdown>
+	);
+});
+
+/**
+ * A session title on one line: its inline math rendered by KaTeX, the rest
+ * as plain text (TeX left in an old title is cleaned).
+ */
+export const TitleText = memo(function TitleText({ title }: { title: string }) {
+	return titleParts(title).map((part, i) =>
+		part.math ? (
+			<span
+				// biome-ignore lint/suspicious/noArrayIndexKey: the parts never reorder
+				key={i}
+				className="title-math"
+				// biome-ignore lint/security/noDangerouslySetInnerHtml: KaTeX's own output, as rehype-katex inserts it (`trust` off)
+				dangerouslySetInnerHTML={{
+					__html: katex.renderToString(part.text, { throwOnError: false }),
+				}}
+			/>
+		) : (
+			// Bare text, so the title reads as one run with what's around it.
+			plainPart(part)
+		),
 	);
 });

@@ -35,6 +35,7 @@ import type {
 	UserMessage,
 } from "../shared/protocol.ts";
 import { apply, emptyView } from "../shared/reducer.ts";
+import { plainTitle, titleFrom } from "../shared/title.ts";
 import type { AgentDriver, AgentImage, AgentSession } from "./agent/driver.ts";
 import type { Folder, FolderChange } from "./folder/folder.ts";
 import {
@@ -605,7 +606,7 @@ export class Sessions {
 	/** A path for a new transcript that no other file has. */
 	private freePath(meta: TranscriptMeta) {
 		const date = localDate(new Date(meta.created));
-		const slug = slugify(meta.title) || meta.id.slice(0, 8);
+		const slug = slugify(plainTitle(meta.title)) || meta.id.slice(0, 8);
 		const dir = sessionsDir(meta.course);
 		const taken = new Set(this.folder.list(dir).map((e) => e.name));
 		for (let n = 1; ; n += 1) {
@@ -798,16 +799,6 @@ function seedFrom(history: string) {
 		history,
 		"</transcript>",
 	].join("\n\n");
-}
-
-/** The first line of a message, as a title of at most 60 characters. */
-function titleFrom(text: string) {
-	const line = text
-		.replace(/<!--[\s\S]*?-->/g, "")
-		.replace(/\$+/g, "")
-		.replace(/\s+/g, " ")
-		.trim();
-	return line.length > 60 ? `${line.slice(0, 59).trimEnd()}…` : line;
 }
 
 export function slugify(title: string) {

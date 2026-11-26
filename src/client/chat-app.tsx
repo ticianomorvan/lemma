@@ -38,6 +38,7 @@ import type {
 import { DevicesMenu } from "./devices-menu.tsx";
 import { FolderSetup } from "./folder-setup.tsx";
 import { type Layout, useLayout } from "./layout.ts";
+import { Title, titleText } from "./markdown/lazy.tsx";
 import { isPairingPath, PairingScreen, redeemLink } from "./pairing.tsx";
 import { PracticeView } from "./practice/practice-view.tsx";
 import { usePrint } from "./print/use-print.tsx";
@@ -183,8 +184,17 @@ export function ChatApp() {
 					<SessionsMenu
 						current={id}
 						label={
+							meta && meta.id === id ? (
+								<>
+									{meta.course} · <Title title={meta.title} />
+								</>
+							) : (
+								"Sesiones"
+							)
+						}
+						hint={
 							meta && meta.id === id
-								? `${meta.course} · ${meta.title || "Sin título"}`
+								? `${meta.course} · ${titleText(meta.title)}`
 								: "Sesiones"
 						}
 						loadState={loadState}

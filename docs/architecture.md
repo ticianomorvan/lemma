@@ -50,7 +50,7 @@ Tests swap `AgentDriver` for a fake that replays recorded SDK streams. That fake
 **Front matter:** `id`, `course`, `title`, `created`, `mode`, `sdk_session_id`, `sdk_body_hash`.
 
 **Lifecycle:**
-1. **Create.** `POST /api/sessions` generates the UUID and writes `<course>/sessions/<date>-<slug>.md` before the first turn (the slug comes from the title, or the id's first 8 characters). A missing course folder is made. The first message becomes the title when there is none.
+1. **Create.** `POST /api/sessions` generates the UUID and writes `<course>/sessions/<date>-<slug>.md` before the first turn (the slug comes from the title, or the id's first 8 characters). A missing course folder is made. The first message becomes the title when there is none: its first line, at most 60 characters of plain text, with inline math kept as `$…$` and never cut mid-formula (`shared/title.ts`). The header, the session list and the print heading render that math with KaTeX; a browser tab, a tooltip and a PDF's file name show it as plain text (`{,}` as a comma, commands as Unicode, no `$`). Titles from before step 12 lost their `$` but kept the TeX, and get the same plain-text cleaning.
 2. **Open.** The first send starts `query({prompt: AsyncIterable<SDKUserMessage>, options})` in streaming-input mode, with these options:
    - `cwd`: the study root.
    - `settingSources: ['project']`, which keeps the user's global hooks and MCP servers out.

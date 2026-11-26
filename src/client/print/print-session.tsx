@@ -8,7 +8,7 @@ import "./print.css";
 import type { Ref } from "react";
 import type { SessionView, Turn } from "../../shared/protocol.ts";
 import { SchemeOverride } from "../blocks/theme.ts";
-import { Markdown } from "../markdown/lazy.tsx";
+import { Markdown, Title } from "../markdown/lazy.tsx";
 import { TurnBlocks } from "../thread/parts.tsx";
 import { Citation, Question } from "../thread/thread.tsx";
 
@@ -30,7 +30,9 @@ export function PrintSession({
 		<SchemeOverride value="light">
 			<div ref={ref} className="print-root theme-light" aria-hidden>
 				<header className="print-head">
-					<h1>{meta.title || "Sin título"}</h1>
+					<h1>
+						<Title title={meta.title} />
+					</h1>
 					<p>
 						{meta.course} ·{" "}
 						<time dateTime={meta.created}>{longDate(meta.created)}</time>

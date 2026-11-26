@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import type { SessionView } from "../../shared/protocol.ts";
+import { titleText } from "../markdown/lazy.tsx";
 import { PrintSession } from "./print-session.tsx";
 
 /** Longest wait for the copy to draw before printing it anyway. */
@@ -22,8 +23,7 @@ const READY_TIMEOUT_MS = 20_000;
 const PENDING = "[data-pending]";
 
 export function usePrint(view: SessionView | undefined) {
-	const title =
-		view && `${view.meta.title || "Sin título"} · ${view.meta.course}`;
+	const title = view && `${titleText(view.meta.title)} · ${view.meta.course}`;
 	const [printing, setPrinting] = useState(false);
 	const root = useRef<HTMLDivElement>(null);
 	/** The page's own title while the copy is mounted (the copy's is the PDF's file name). */
