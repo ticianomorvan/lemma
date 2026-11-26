@@ -365,14 +365,11 @@ export const DevicesResponse = z.object({
 });
 export type DevicesResponse = z.infer<typeof DevicesResponse>;
 
-export const AttachmentResponse = Attachment;
-export type AttachmentResponse = Attachment;
-
-/** `POST /api/pair`: `lan` asks for a phone's link, on the LAN origin. */
 /** `POST /pair/:code`: where the browser goes once paired. */
 export const RedeemResponse = z.object({ next: z.string() });
 export type RedeemResponse = z.infer<typeof RedeemResponse>;
 
+/** `POST /api/pair`: `lan` asks for a phone's link, on the LAN origin. */
 export const PairBody = z.object({ lan: z.boolean().optional() });
 export type PairBody = z.infer<typeof PairBody>;
 

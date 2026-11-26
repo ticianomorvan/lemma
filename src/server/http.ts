@@ -1,7 +1,7 @@
 import { extname, join, resolve } from "node:path";
 import { type ZodType, z } from "zod";
 import {
-	type AttachmentResponse,
+	type Attachment,
 	ClientMessage,
 	CreateSessionBody,
 	type CreateSessionResponse,
@@ -24,8 +24,14 @@ import type { AgentDriver } from "./agent/driver.ts";
 import { type Auth, CODE_TTL_MS } from "./auth/auth.ts";
 import { chooseStudyFolder } from "./config.ts";
 import { Folder } from "./folder/folder.ts";
-import { INBOX, isCourseName, materialsDir } from "./folder/layout.ts";
-import { BadRequest, type PhotoType, Sessions, topic } from "./sessions.ts";
+import { isCourseName, materialsDir } from "./folder/layout.ts";
+import {
+	MAX_PHOTO_BYTES,
+	type PhotoType,
+	saveToInbox,
+	sniffPhoto,
+} from "./photos.ts";
+import { BadRequest, Sessions, topic } from "./sessions.ts";
 
 export type ServerOptions = {
 	port: number;
@@ -77,6 +83,8 @@ export async function startServer({
 }: ServerOptions) {
 	/** The LAN listener, while LAN mode is on: the same routes on the LAN address. */
 	let lan: Bun.Server<Socket> | null = null;
+	/** Re-checks LAN mode when a phone's code runs out; cleared on stop. */
+	const expiries = new Set<ReturnType<typeof setTimeout>>();
 	const publish = (name: string, message: ServerMessage) => {
 		const text = JSON.stringify(message);
 		server.publish(name, text);
@@ -168,7 +176,8 @@ export async function startServer({
 			console.log(`LAN mode on: ${auth.lan}`);
 		} else if (!wanted && lan) {
 			auth.setLan(null);
-			lan.stop(true);
+			// Not forced: the request that revoked the last phone may be on it.
+			void lan.stop();
 			lan = null;
 			console.log("LAN mode off: no phone is paired");
 		}
@@ -238,7 +247,14 @@ export async function startServer({
 							}
 							const link = auth.startPairing({ lan });
 							// An unused code stops keeping LAN mode on once it expires.
-							if (lan) setTimeout(() => syncLan(), CODE_TTL_MS + 1000).unref();
+							if (lan) {
+								const timer = setTimeout(() => {
+									expiries.delete(timer);
+									syncLan();
+								}, CODE_TTL_MS + 1000);
+								timer.unref();
+								expiries.add(timer);
+							}
 							return Response.json(link satisfies PairResponse, {
 								status: 201,
 							});
@@ -373,18 +389,12 @@ export async function startServer({
 				"/api/attachments": {
 					// A photo sent with no session open: it goes to the inbox.
 					POST: withStudy((req, { folder }) =>
-						withPhoto(req, (bytes, type) => {
-							const path = folder.saveAttachment(
-								INBOX,
-								bytes,
-								`photo.${type === "image/png" ? "png" : "jpg"}`,
-								`${new Date().toISOString().slice(0, 10)}-`,
-							);
-							const id = path.split("/").pop() ?? path;
-							return Response.json({ id, path } satisfies AttachmentResponse, {
-								status: 201,
-							});
-						}),
+						withPhoto(req, (bytes, type) =>
+							Response.json(
+								saveToInbox(folder, bytes, type) satisfies Attachment,
+								{ status: 201 },
+							),
+						),
 					),
 				},
 				"/api/courses/:course/materials": {
@@ -470,6 +480,8 @@ export async function startServer({
 	const stop = server.stop.bind(server);
 	// Stopping the server also closes the LAN listener, the watcher and the live agents.
 	server.stop = (closeActiveConnections?: boolean) => {
+		for (const timer of expiries) clearTimeout(timer);
+		expiries.clear();
 		lan?.stop(true);
 		lan = null;
 		study?.unwatch();
@@ -478,9 +490,6 @@ export async function startServer({
 	};
 	return server;
 }
-
-/** The largest photo an upload may be: Claude takes images up to 5 MB as base64. */
-export const MAX_PHOTO_BYTES = 3.5 * 1024 * 1024;
 
 /**
  * A photo upload: `multipart/form-data` with one `photo` file, a JPEG or PNG
@@ -511,15 +520,6 @@ async function withPhoto(
 	const type = sniffPhoto(bytes);
 	if (!type) return error(415, "not_a_photo", "send a JPEG or PNG image");
 	return handle(bytes, type);
-}
-
-/** JPEG or PNG by the file's first bytes. */
-export function sniffPhoto(bytes: Uint8Array): PhotoType | null {
-	const starts = (...sig: number[]) => sig.every((b, i) => bytes[i] === b);
-	if (starts(0xff, 0xd8, 0xff)) return "image/jpeg";
-	if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))
-		return "image/png";
-	return null;
 }
 
 const REFUSALS = {

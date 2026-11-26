@@ -54,7 +54,7 @@ export function CameraButton({
 				onClick={() => input.current?.click()}
 				aria-label={variant === "icon" ? label : undefined}
 				className={cn(
-					"inline-flex shrink-0 items-center justify-center transition-transform duration-150 ease-out active:scale-[0.96]",
+					"inline-flex shrink-0 select-none items-center justify-center transition-transform duration-150 ease-out [-webkit-touch-callout:none] active:scale-[0.96]",
 					variant === "icon" &&
 						"size-11 rounded-full bg-primary-soft text-primary dark:bg-primary/20",
 					variant === "hero" &&

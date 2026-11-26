@@ -62,7 +62,7 @@ export function ChatApp() {
 	const [id, setId] = useState(sessionFromPath);
 	const [meta, setMeta] = useState<SessionMeta>();
 	const [screen, setScreen] = useState<
-		"app" | "setup" | "failed" | "unpaired" | "pairing" | "expired"
+		"app" | "setup" | "failed" | "unpaired" | "pairing" | "expired" | "offline"
 	>(isPairingPath() ? "pairing" : "app");
 	const unpair = useCallback(() => {
 		history.replaceState(null, "", "/");
@@ -105,8 +105,9 @@ export function ChatApp() {
 		void (async () => {
 			try {
 				if (isPairingPath()) {
-					const next = await redeemLink();
+					const next = await redeemLink().catch(() => "offline" as const);
 					if (cancelled) return;
+					if (next === "offline") return setScreen("offline");
 					// A full load, so this page starts over with its new cookie.
 					return next ? location.replace(next) : setScreen("expired");
 				}
@@ -154,6 +155,9 @@ export function ChatApp() {
 	// Redeeming takes one request; nothing to show meanwhile.
 	if (screen === "pairing") return null;
 	if (screen === "expired") return <PairingScreen kind="expired" />;
+	if (screen === "offline") {
+		return <PairingScreen kind="offline" onRetry={() => location.reload()} />;
+	}
 	if (screen === "unpaired") {
 		return <PairingScreen kind="unpaired" onRetry={retry} />;
 	}

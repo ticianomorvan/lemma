@@ -63,7 +63,16 @@ export function Thread({
 	const running = isRunning(state.view);
 	const items = threadItems(state);
 	const phone = useLayout() === "phone";
-	const waiting = state.view?.attachments ?? [];
+	// Photos a message on its way already took don't wait any more: they
+	// can't go out twice.
+	const sending = new Set(
+		state.outgoing.flatMap((m) =>
+			m.failed ? [] : m.attachments.map((a) => a.id),
+		),
+	);
+	const waiting = (state.view?.attachments ?? []).filter(
+		(a) => !sending.has(a.id),
+	);
 	// Rows already there when the thread mounts appear at once; only new ones
 	// animate in, so opening the thread (or switching to it) is instant.
 	const [present] = useState(() => new Set(items.map(itemKey)));

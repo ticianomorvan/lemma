@@ -22,6 +22,15 @@ test("LAN mode binds the Wi-Fi address, never loopback, a VPN or a public one", 
 		}),
 	).toBe("192.168.0.242");
 	expect(lanAddress({ eth0: [v4("172.20.1.9")] })).toBe("172.20.1.9");
+	// Linux with Docker and libvirt: the bridges come first, Wi-Fi wins.
+	expect(
+		lanAddress({
+			docker0: [v4("172.17.0.1")],
+			"br-3f2a": [v4("172.18.0.1")],
+			virbr0: [v4("192.168.122.1")],
+			wlan0: [v4("192.168.1.20")],
+		}),
+	).toBe("192.168.1.20");
 	expect(
 		lanAddress({ lo0: [v4("127.0.0.1", true)], en0: [v4("8.8.8.8")] }),
 	).toBeNull();

@@ -15,7 +15,6 @@ import { useSyncExternalStore } from "react";
 import {
 	type Anchor,
 	type Attachment,
-	type AttachmentResponse,
 	type NoteBody,
 	type SendMessageBody,
 	ServerMessage,
@@ -187,7 +186,7 @@ export class SessionStore {
 			});
 			if (await isUnpaired(res)) this.unpaired();
 			if (!res.ok) throw new Error(await errorMessage(res));
-			patch({ id: ((await res.json()) as AttachmentResponse).id });
+			patch({ id: ((await res.json()) as Attachment).id });
 		} catch (error) {
 			patch({ failed: String((error as Error).message ?? error) });
 		}

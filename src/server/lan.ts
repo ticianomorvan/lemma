@@ -2,9 +2,13 @@
  * The address LAN mode binds to: this machine's private IPv4 address on the
  * local network (Wi-Fi or Ethernet), so a phone on the same network can reach
  * it. Only that interface is bound, never `0.0.0.0`. VPN and Tailscale
- * addresses (100.64.0.0/10) are skipped: they aren't the phone's network.
+ * addresses (100.64.0.0/10) are skipped, and so are the virtual bridges of
+ * Docker, libvirt and the like: they aren't the phone's network.
  */
 import { type NetworkInterfaceInfo, networkInterfaces } from "node:os";
+
+/** Interfaces no phone is on: container, VM and VPN bridges. */
+const VIRTUAL = /^(docker|br-|veth|virbr|vmnet|vboxnet|utun|tun|tap|bridge)/;
 
 export function lanAddress(
 	interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
@@ -12,10 +16,13 @@ export function lanAddress(
 	const candidates = Object.entries(interfaces)
 		.flatMap(([name, list]) => (list ?? []).map((info) => ({ name, info })))
 		.filter(
-			({ info }) =>
-				info.family === "IPv4" && !info.internal && isPrivate(info.address),
+			({ name, info }) =>
+				info.family === "IPv4" &&
+				!info.internal &&
+				isPrivate(info.address) &&
+				!VIRTUAL.test(name),
 		);
-	// macOS names Wi-Fi and built-in Ethernet `en*`; prefer them over bridges.
+	// macOS names Wi-Fi and built-in Ethernet `en*`; prefer them.
 	candidates.sort(
 		(a, b) => Number(b.name.startsWith("en")) - Number(a.name.startsWith("en")),
 	);

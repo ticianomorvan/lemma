@@ -4,10 +4,10 @@
  * computer's Wi-Fi address.
  */
 import { afterEach, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PairResponse } from "../shared/protocol.ts";
-import { sniffPhoto } from "./http.ts";
+import { sniffPhoto } from "./photos.ts";
 import {
 	authOf,
 	Client,
@@ -206,6 +206,26 @@ test("a revoked phone gets 403, and LAN mode ends with the last phone", async ()
 		{ cookie: phone.cookie, origin: phone.origin },
 	);
 	expect(lanOriginNow.status).toBe(403);
+});
+
+test("an outside edit of the transcript keeps the photos waiting", async () => {
+	const { server, api, id, dir } = await serve(
+		{ streams: ["math"] },
+		{ lanAddress: LAN },
+	);
+	const phone = await pairPhone(server, api);
+	const res = await upload(`${phone.origin}/api/sessions/${id}/attachments`, {
+		cookie: phone.cookie,
+		origin: phone.origin,
+	});
+	const photo = (await res.json()) as { id: string; path: string };
+	const client = await Client.subscribe(server, id);
+	const md = join(dir, `${photo.path.split("/").slice(0, -1).join("/")}.md`);
+	await writeFile(md, `${await readFile(md, "utf8")}\nUna línea agregada.\n`);
+	// The watcher reloads the file and pushes a fresh snapshot.
+	await client.until((m) => m.t === "snapshot" && m.seq > client.snapshot.seq);
+	const fresh = client.messages.findLast((m) => m.t === "snapshot");
+	expect(fresh?.t === "snapshot" && fresh.attachments).toEqual([photo]);
 });
 
 test("a photo with no session open goes to inbox/", async () => {

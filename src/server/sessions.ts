@@ -12,7 +12,7 @@
  *   otherwise it starts fresh, seeded with the transcript.
  * - An agent idle for `idleMs` is closed; its session stays loaded.
  */
-import { basename, extname } from "node:path";
+import { basename } from "node:path";
 import type {
 	Attachment,
 	Block,
@@ -42,6 +42,7 @@ import {
 	isCourseName,
 	sessionsDir,
 } from "./folder/layout.ts";
+import { type PhotoType, photoName, photoType } from "./photos.ts";
 import {
 	appendEntry,
 	bodyHash,
@@ -250,7 +251,7 @@ export class Sessions {
 		const path = this.folder.saveAttachment(
 			attachmentsDir(s.path),
 			bytes,
-			`photo.${PHOTO_EXTENSIONS[type]}`,
+			photoName(type),
 		);
 		const attachment = { id: basename(path), path };
 		this.emit(id, s, {
@@ -320,7 +321,7 @@ export class Sessions {
 				continue;
 			}
 			try {
-				s.view = viewOf(read(this.folder, path), id);
+				s.view = this.viewAt(path, id);
 			} catch {
 				continue;
 			}
@@ -342,14 +343,19 @@ export class Sessions {
 		if (!path) return undefined;
 		let view: SessionView;
 		try {
-			view = viewOf(read(this.folder, path), id);
+			view = this.viewAt(path, id);
 		} catch {
 			return undefined;
 		}
-		view = { ...view, attachments: this.waiting(path, view) };
 		const s: LiveSession = { path, view, seq: 0 };
 		this.live.set(id, s);
 		return s;
+	}
+
+	/** A session's view from its file, with the photos waiting in its folder. */
+	private viewAt(path: string, id: string): SessionView {
+		const view = viewOf(read(this.folder, path), id);
+		return { ...view, attachments: this.waiting(path, view) };
 	}
 
 	/**
@@ -386,6 +392,7 @@ export class Sessions {
 		let asked: string;
 		let notes: Note[];
 		let images: AgentImage[];
+		let photos: Attachment[];
 		try {
 			const before = read(this.folder, s.path);
 			const hash = bodyHash(before.body);
@@ -399,7 +406,7 @@ export class Sessions {
 					: {}),
 				...(history ? { seed: seedFrom(history) } : {}),
 			};
-			images = this.images(user.attachments);
+			({ photos, images } = this.images(user.attachments));
 			const after = appendEntry(before, {
 				kind: "user",
 				text: user.text,
@@ -431,7 +438,10 @@ export class Sessions {
 				}
 				// An agent seeded with the file has its notes already.
 				agent.push(
-					agentMessage(user, fresh && !agent.resumed ? [] : notes),
+					agentMessage(
+						{ ...user, attachments: photos },
+						fresh && !agent.resumed ? [] : notes,
+					),
 					images,
 				);
 				if (s.cancel === user.turnId) {
@@ -447,17 +457,23 @@ export class Sessions {
 		else void push();
 	}
 
-	/** The photos' bytes for Claude; one deleted meanwhile is left out. */
-	private images(attachments: Attachment[]): AgentImage[] {
-		return attachments.flatMap((a) => {
+	/**
+	 * The photos' bytes for Claude. One deleted meanwhile is left out, of the
+	 * images and of the paths Claude is told about.
+	 */
+	private images(attachments: Attachment[]) {
+		const photos: Attachment[] = [];
+		const images: AgentImage[] = [];
+		for (const a of attachments) {
 			const type = photoType(a.path);
+			if (!type) continue;
 			try {
 				const data = this.folder.readBytes(a.path).toString("base64");
-				return type ? [{ mediaType: type, data }] : [];
-			} catch {
-				return [];
-			}
-		});
+				images.push({ mediaType: type, data });
+				photos.push(a);
+			} catch {}
+		}
+		return { photos, images };
 	}
 
 	/** Publishes the agent's events until it closes or fails. */
@@ -592,21 +608,6 @@ export class Sessions {
 }
 
 export class BadRequest extends Error {}
-
-/** The photo types an upload may be; the server checks the bytes, not the name. */
-export type PhotoType = AgentImage["mediaType"];
-const PHOTO_EXTENSIONS: Record<PhotoType, string> = {
-	"image/jpeg": "jpg",
-	"image/png": "png",
-};
-
-/** The photo type a file's name says, for files the server saved itself. */
-function photoType(name: string): PhotoType | undefined {
-	const ext = extname(name).toLowerCase();
-	if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-	if (ext === ".png") return "image/png";
-	return undefined;
-}
 
 /** The view of a transcript: each question with the answer after it. */
 export function viewOf(transcript: Transcript, id: string): SessionView {
