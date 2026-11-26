@@ -6,7 +6,7 @@
 import mermaid from "mermaid";
 import { parseSvg } from "./sanitize-svg.ts";
 import { SvgBlock } from "./svg-node.tsx";
-import { type Scheme, token, useScheme } from "./theme.ts";
+import { type Scheme, tokens, useScheme } from "./theme.ts";
 
 /** Mermaid keeps global config, so renders take turns. */
 let queue: Promise<unknown> = Promise.resolve();
@@ -45,7 +45,7 @@ export function checkMermaid(source: string) {
 }
 
 function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
-	const t = (name: string) => token(name, scheme);
+	const t = tokens(scheme);
 	const run = queue.then(async () => {
 		checkMermaid(source);
 		mermaid.initialize({

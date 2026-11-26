@@ -15,42 +15,50 @@ import { PrintSession } from "./print-session.tsx";
 /** Longest wait for the copy to draw before printing it anyway. */
 const READY_TIMEOUT_MS = 20_000;
 
-/** What isn't drawn yet: the Markdown chunk, a diagram, a Vega chart inside one. */
-const PENDING =
-	"[data-md-loading], .diagram[data-state='loading'], .diagram-loading";
+/**
+ * What isn't drawn yet: a loading fallback marks itself `data-pending` (the
+ * Markdown chunk, a diagram, a Vega chart inside one).
+ */
+const PENDING = "[data-pending]";
 
 export function usePrint(view: SessionView | undefined) {
 	const title =
 		view && `${view.meta.title || "Sin título"} · ${view.meta.course}`;
 	const [printing, setPrinting] = useState(false);
 	const root = useRef<HTMLDivElement>(null);
-	/** The copy is drawn and fitted: `beforeprint` has nothing to do. */
-	const prepared = useRef(false);
+	/** The page's own title while the copy is mounted (the copy's is the PDF's file name). */
+	const saved = useRef<string>(undefined);
 	const busy = useRef<Promise<void>>(undefined);
 	const titleRef = useRef(title);
 	titleRef.current = title;
 
+	/** Mounts and fits the copy; a no-op while it is mounted. */
 	const mount = useCallback(() => {
-		const before = document.title;
+		if (saved.current !== undefined) return;
+		saved.current = document.title;
 		flushSync(() => setPrinting(true));
 		if (titleRef.current) document.title = titleRef.current;
-		return before;
+		if (root.current) fit(root.current);
+	}, []);
+
+	/** Only the dialog closing unmounts it. */
+	const unmount = useCallback(() => {
+		if (saved.current === undefined) return;
+		document.title = saved.current;
+		saved.current = undefined;
+		setPrinting(false);
 	}, []);
 
 	const print = useCallback(() => {
 		busy.current ??= (async () => {
-			const before = mount();
+			mount();
 			const el = root.current;
-			if (el) {
-				await drawn(el);
-				fit(el);
-			}
-			prepared.current = true;
-			// The dialog's default file name is the page's title.
+			if (!el) return;
+			await drawn(el);
+			// A print from the browser's menu meanwhile already came and went.
+			if (saved.current === undefined) return;
+			fit(el);
 			window.print();
-			// Most browsers block in print() and fire `afterprint` before it
-			// returns; restoring here too covers those that don't.
-			document.title = before;
 		})().finally(() => {
 			busy.current = undefined;
 		});
@@ -58,33 +66,21 @@ export function usePrint(view: SessionView | undefined) {
 	}, [mount]);
 
 	useEffect(() => {
-		let before: string | undefined;
-		const onBefore = () => {
-			if (prepared.current) return;
-			before = mount();
-			if (root.current) fit(root.current);
-		};
-		const onAfter = () => {
-			prepared.current = false;
-			if (before !== undefined) document.title = before;
-			before = undefined;
-			setPrinting(false);
-		};
 		const onKey = (e: KeyboardEvent) => {
 			if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === "KeyP") {
 				e.preventDefault();
 				void print();
 			}
 		};
-		window.addEventListener("beforeprint", onBefore);
-		window.addEventListener("afterprint", onAfter);
+		window.addEventListener("beforeprint", mount);
+		window.addEventListener("afterprint", unmount);
 		window.addEventListener("keydown", onKey);
 		return () => {
-			window.removeEventListener("beforeprint", onBefore);
-			window.removeEventListener("afterprint", onAfter);
+			window.removeEventListener("beforeprint", mount);
+			window.removeEventListener("afterprint", unmount);
 			window.removeEventListener("keydown", onKey);
 		};
-	}, [mount, print]);
+	}, [mount, unmount, print]);
 
 	/** The copy, in a portal on `<body>`, while printing. */
 	const node =

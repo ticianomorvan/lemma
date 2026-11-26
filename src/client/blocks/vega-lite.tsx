@@ -16,7 +16,7 @@ import { expressionInterpreter } from "vega-interpreter";
 import { type Config, compile, type TopLevelSpec } from "vega-lite";
 import { parseSvg } from "./sanitize-svg.ts";
 import { SvgBlock } from "./svg-node.tsx";
-import { type Scheme, token, useScheme } from "./theme.ts";
+import { type Scheme, tokens, useScheme } from "./theme.ts";
 
 const NO_FETCH = "los datos van en `values`: no se cargan URLs";
 
@@ -37,7 +37,7 @@ function refusingLoader() {
 }
 
 function config(scheme: Scheme): Config {
-	const t = (name: string) => token(name, scheme);
+	const t = tokens(scheme);
 	const ink = t("--foreground");
 	const muted = t("--muted-foreground");
 	const line = t("--border");
@@ -199,7 +199,7 @@ export default function VegaLite({ source }: { source: string }) {
 	return (
 		<div ref={ref} className="diagram-scroll">
 			{width > 0 && (
-				<Suspense fallback={<div className="diagram-loading" />}>
+				<Suspense fallback={<div className="diagram-loading" data-pending />}>
 					<Chart source={source} width={width} scheme={scheme} />
 				</Suspense>
 			)}

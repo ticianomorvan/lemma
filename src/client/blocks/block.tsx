@@ -71,7 +71,7 @@ export function DiagramBlock({
 				<Suspense
 					fallback={
 						<Report state="loading" set={setState}>
-							<div className="diagram-loading" />
+							<div className="diagram-loading" data-pending />
 							{/* A print that can't wait for the drawing shows the source. */}
 							<pre className="diagram-source diagram-print-source">
 								{source}

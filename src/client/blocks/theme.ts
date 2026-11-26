@@ -36,11 +36,10 @@ export function useScheme(): Scheme {
 let lightProbe: HTMLElement | undefined;
 
 /**
- * The value of a theme token, such as `--primary`, as a CSS colour, in
- * `inScheme` (the page's own by default). Light tokens on a dark page come
- * from a hidden `.theme-light` element.
+ * Reads theme tokens, such as `--primary`, as CSS colours in `inScheme`.
+ * Light tokens on a dark page come from a hidden `.theme-light` element.
  */
-export function token(name: string, inScheme?: Scheme) {
+export function tokens(inScheme: Scheme): (name: string) => string {
 	let from = document.documentElement;
 	if (inScheme === "light" && scheme() === "dark") {
 		if (!lightProbe?.isConnected) {
@@ -51,5 +50,6 @@ export function token(name: string, inScheme?: Scheme) {
 		}
 		from = lightProbe;
 	}
-	return getComputedStyle(from).getPropertyValue(name).trim();
+	const style = getComputedStyle(from);
+	return (name) => style.getPropertyValue(name).trim();
 }

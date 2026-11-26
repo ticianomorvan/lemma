@@ -214,11 +214,7 @@ async function expectPrintable(page: Page) {
 		await expect(drawn.first()).toBeVisible();
 	}
 	expect(
-		await root
-			.locator(
-				".diagram-loading, [data-md-loading], .katex-error, button:visible",
-			)
-			.count(),
+		await root.locator("[data-pending], .katex-error, button:visible").count(),
 	).toBe(0);
 	await expect(root.locator(".katex-display")).toHaveCount(2);
 
@@ -275,10 +271,14 @@ test("Imprimir prints the Practice thread as a light document, every block drawn
 	expect(await dark("#root")).toBe(true);
 	expect(await dark(".print-root")).toBe(false);
 
+	// The PDF's default file name is the session's title, until the dialog closes.
+	await expect(page).toHaveTitle(`${TITLE} · ${COURSE}`);
+
 	// The dialog closing unmounts the copy; the screen is as it was.
 	await page.emulateMedia({ media: "screen" });
 	await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
 	await expect(page.locator(".print-root")).toHaveCount(0);
+	await expect(page).toHaveTitle("Lemma");
 	await expect(page.locator("#composer")).toBeVisible();
 	expect(violations).toEqual([]);
 });

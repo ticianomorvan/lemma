@@ -11,7 +11,7 @@ const Lazy = lazy(() => load.then((m) => ({ default: m.Markdown })));
 
 export function Markdown(props: { text: string; question?: boolean }) {
 	const plain = (loading?: boolean) => (
-		<p className="whitespace-pre-wrap" data-md-loading={loading || undefined}>
+		<p className="whitespace-pre-wrap" data-pending={loading || undefined}>
 			{props.text}
 		</p>
 	);
