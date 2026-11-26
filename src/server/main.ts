@@ -26,7 +26,7 @@ const auth = new Auth({
 	...(dev ? { devOrigin: DEV_ORIGIN } : {}),
 });
 
-// Typst's compiler takes about half a second to load: start it now, so the
+// Typst's compiler takes a moment (under 0.1 s) to load: start it now, so the
 // first block, preview or export doesn't wait for it.
 const typst = new Typst();
 if (production) typst.warm();

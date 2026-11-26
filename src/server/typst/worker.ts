@@ -20,6 +20,7 @@ import {
 } from "@myriaddreamin/typst.ts";
 import { CompileFormatEnum } from "@myriaddreamin/typst.ts/compiler";
 import {
+	loadFonts,
 	withAccessModel,
 	withPackageRegistry,
 } from "@myriaddreamin/typst.ts/options.init";
@@ -27,6 +28,13 @@ import { Folder } from "../folder/folder.ts";
 import { MITEX, type TypstJob, type TypstReply } from "./typst.ts";
 
 declare const self: Worker;
+
+// No network, by construction: a compile, a font or a package that reached
+// for one would fail here instead of fetching (the Worker has its own globals).
+globalThis.fetch = Object.assign(
+	() => Promise.reject(new Error("the Typst worker has no network")),
+	{ preconnect: () => {} },
+) as unknown as typeof fetch;
 
 const ASSETS = join(import.meta.dir, "assets");
 const FONTS = join(ASSETS, "fonts");
@@ -127,24 +135,20 @@ await compiler.init({
 		withAccessModel(accessModel as any),
 		// biome-ignore lint/suspicious/noExplicitAny: as above
 		withPackageRegistry(registry as any),
-		// Our fonts only: typst.ts would fetch its defaults from a CDN.
-		async (_: unknown, { builder }: { builder: FontBuilder }) => {
-			for (const file of readdirSync(FONTS).filter((f) =>
-				/\.(otf|ttf)$/.test(f),
-			)) {
-				await builder.add_raw_font(
-					new Uint8Array(readFileSync(join(FONTS, file))),
-				);
-			}
-		},
+		// Our fonts only. `assets: false` matters: without a loader that says
+		// so, typst.ts adds one that downloads its defaults from a CDN.
+		loadFonts(
+			readdirSync(FONTS)
+				.filter((f) => /\.(otf|ttf)$/.test(f))
+				.map((f) => new Uint8Array(readFileSync(join(FONTS, f)))),
+			{ assets: false },
+		),
 	],
 });
 const renderer = createTypstRenderer();
 await renderer.init({
 	getModule: () => wasm("@myriaddreamin/typst-ts-renderer"),
 });
-
-type FontBuilder = { add_raw_font(data: Uint8Array): Promise<void> };
 
 type Diagnostic = {
 	severity: string;

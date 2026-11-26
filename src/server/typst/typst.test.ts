@@ -260,6 +260,9 @@ const ENTRIES: Entry[] = [
 					"",
 					"**Nota**(opcional) y $f$(x).",
 					"",
+					// Text after an inline expression must stay text.
+					'Mira **a**(panic("INJECTED")) y **a**.text y $f$(panic("INJECTED")) y **a**(read("x")).',
+					"",
 					"```typst",
 					"] #set text(fill: red) #[",
 					"```",

@@ -1,7 +1,7 @@
 /**
  * Typst on the server: `typst` blocks to SVG, `.typ` notes and session
  * exports to PDF. The compiler (typst.ts, WebAssembly) runs in one Worker
- * (`worker.ts`) that loads in about half a second and then stays warm, so
+ * (`worker.ts`) that loads in under 0.1 s and then stays warm, so
  * the page never loads the 28 MB compiler and a phone renders blocks as fast
  * as the desktop. See docs/architecture.md → Typst.
  *
