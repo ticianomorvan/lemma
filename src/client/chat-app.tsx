@@ -9,7 +9,7 @@
  * - A session shows as Read (its course's PDF with the thread beside it) or
  *   Practice (the thread as a notebook); each client keeps its own choice.
  */
-import { SquarePen } from "lucide-react";
+import { LoaderCircle, Printer, SquarePen } from "lucide-react";
 import {
 	lazy,
 	Suspense,
@@ -19,7 +19,12 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { TooltipProvider } from "#components/ui/tooltip.tsx";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "#components/ui/tooltip.tsx";
 import { cn } from "#lib/utils.ts";
 import { APP_NAME } from "../shared/app.ts";
 import type {
@@ -33,8 +38,10 @@ import type {
 import { DevicesMenu } from "./devices-menu.tsx";
 import { FolderSetup } from "./folder-setup.tsx";
 import { type Layout, useLayout } from "./layout.ts";
+import { Title, titleText } from "./markdown/lazy.tsx";
 import { isPairingPath, PairingScreen, redeemLink } from "./pairing.tsx";
 import { PracticeView } from "./practice/practice-view.tsx";
+import { usePrint } from "./print/use-print.tsx";
 import type { PagePlace } from "./read/anchors.ts";
 import type { Material, ReadMemory } from "./read/read-view.tsx";
 import { SessionsMenu } from "./sessions-menu.tsx";
@@ -88,6 +95,8 @@ export function ChatApp() {
 		: "practice";
 	/** Set by the open session: what it carries into Read when the view switches there. */
 	const toRead = useRef<() => void>(undefined);
+	/** Set by the open session: prints it. */
+	const printer = useRef<() => Promise<void>>(undefined);
 	const pickView = useCallback(
 		(next: View) => {
 			if (next === "read" && !readable) return;
@@ -175,8 +184,17 @@ export function ChatApp() {
 					<SessionsMenu
 						current={id}
 						label={
+							meta && meta.id === id ? (
+								<>
+									{meta.course} · <Title title={meta.title} />
+								</>
+							) : (
+								"Sesiones"
+							)
+						}
+						hint={
 							meta && meta.id === id
-								? `${meta.course} · ${meta.title || "Sin título"}`
+								? `${meta.course} · ${titleText(meta.title)}`
 								: "Sesiones"
 						}
 						loadState={loadState}
@@ -200,6 +218,8 @@ export function ChatApp() {
 							/>
 						</Suspense>
 					)}
+					{/* A phone's header has no room for it; ⌘P / Ctrl+P is for keyboards anyway. */}
+					{id && layout !== "phone" && <PrintButton printer={printer} />}
 					<DevicesMenu onUnpaired={unpair} />
 					<button
 						type="button"
@@ -223,6 +243,7 @@ export function ChatApp() {
 							view={view}
 							onView={pickView}
 							toRead={toRead}
+							printer={printer}
 							files={files}
 							layout={layout}
 						/>
@@ -252,6 +273,7 @@ type SessionProps = {
 	view?: View;
 	onView: (view: View) => void;
 	toRead: { current?: () => void };
+	printer: { current?: () => Promise<void> };
 	/** Undefined until the server lists them. */
 	files?: Material[];
 	layout: Layout;
@@ -277,10 +299,19 @@ function Live({
 	view,
 	onView,
 	toRead,
+	printer,
 	files,
 	layout,
 }: SessionProps & { store: SessionStore }) {
 	const state = useSession(store);
+	const meta = state.view?.meta;
+	const printing = usePrint(state.view);
+	useEffect(() => {
+		printer.current = printing.print;
+		return () => {
+			printer.current = undefined;
+		};
+	}, [printer, printing.print]);
 	const actions = useMemo<ThreadActions>(
 		() => ({
 			send: (text, attachmentIds) =>
@@ -299,7 +330,6 @@ function Live({
 		if (state.connection === "unpaired") onUnpaired();
 	}, [state.connection, onMissing, onUnpaired]);
 
-	const meta = state.view?.meta;
 	useEffect(() => {
 		if (meta) onMeta(meta);
 	}, [meta, onMeta]);
@@ -392,7 +422,44 @@ function Live({
 					Sin conexión con el servidor · reconectando…
 				</div>
 			)}
+			{printing.node}
 		</div>
+	);
+}
+
+/** "Imprimir": the browser's print dialog, with the session as a document (print/). */
+function PrintButton({
+	printer,
+}: {
+	printer: { current?: () => Promise<void> };
+}) {
+	const [busy, setBusy] = useState(false);
+	const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
+	const Icon = busy ? LoaderCircle : Printer;
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<button
+						type="button"
+						aria-label="Imprimir"
+						aria-busy={busy || undefined}
+						onClick={() => {
+							if (!printer.current || busy) return;
+							setBusy(true);
+							void printer.current().finally(() => setBusy(false));
+						}}
+						className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-[transform,color,background-color] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97]"
+					/>
+				}
+			>
+				<Icon aria-hidden className={cn("size-3.5", busy && "animate-spin")} />
+			</TooltipTrigger>
+			<TooltipContent>
+				{busy ? "Preparando…" : "Imprimir"}
+				<kbd className="rounded bg-background/15 px-1 font-sans">{mod}P</kbd>
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 

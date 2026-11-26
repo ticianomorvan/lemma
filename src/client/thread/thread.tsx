@@ -375,7 +375,7 @@ function Cell({
  * The student's question: a card on the paper, so each exchange is easy to
  * find when scrolling through long answers. Math in it renders too.
  */
-function Question({
+export function Question({
 	text,
 	photos = [],
 	label,
@@ -383,6 +383,7 @@ function Question({
 	pending = false,
 	anchor,
 	onCite,
+	eager,
 }: {
 	text: string;
 	photos?: Attachment[];
@@ -391,11 +392,13 @@ function Question({
 	pending?: boolean;
 	anchor?: Anchor;
 	onCite?: (anchor: Anchor) => void;
+	/** Load its photos now, not when scrolled to (the print copy). */
+	eager?: boolean;
 }) {
 	return (
 		<div
 			className={cn(
-				"rounded-xl border bg-card px-4 py-3 shadow-sm",
+				"question-card rounded-xl border bg-card px-4 py-3 shadow-sm",
 				pending && "border-dashed bg-transparent shadow-none",
 			)}
 		>
@@ -416,7 +419,7 @@ function Question({
 				)}
 			</div>
 			{anchor && <Citation anchor={anchor} onCite={onCite} />}
-			<SentPhotos photos={photos} />
+			<SentPhotos photos={photos} eager={eager} />
 			<div
 				className={cn(
 					"answer question text-[15px] font-medium",

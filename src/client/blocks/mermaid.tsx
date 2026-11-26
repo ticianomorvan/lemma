@@ -6,7 +6,7 @@
 import mermaid from "mermaid";
 import { parseSvg } from "./sanitize-svg.ts";
 import { SvgBlock } from "./svg-node.tsx";
-import { type Scheme, token, useScheme } from "./theme.ts";
+import { type Scheme, tokens, useScheme } from "./theme.ts";
 
 /** Mermaid keeps global config, so renders take turns. */
 let queue: Promise<unknown> = Promise.resolve();
@@ -45,6 +45,7 @@ export function checkMermaid(source: string) {
 }
 
 function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
+	const t = tokens(scheme);
 	const run = queue.then(async () => {
 		checkMermaid(source);
 		mermaid.initialize({
@@ -56,19 +57,19 @@ function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
 			htmlLabels: false,
 			theme: "base",
 			darkMode: scheme === "dark",
-			fontFamily: token("--font-sans") || "sans-serif",
+			fontFamily: t("--font-sans") || "sans-serif",
 			themeVariables: {
-				background: token("--card"),
-				mainBkg: token("--card"),
-				primaryColor: token("--primary-soft"),
-				primaryTextColor: token("--foreground"),
-				primaryBorderColor: token("--primary"),
-				secondaryColor: token("--secondary"),
-				tertiaryColor: token("--paper"),
-				lineColor: token("--muted-foreground"),
-				textColor: token("--foreground"),
-				noteBkgColor: token("--highlight"),
-				noteTextColor: token("--highlight-foreground"),
+				background: t("--card"),
+				mainBkg: t("--card"),
+				primaryColor: t("--primary-soft"),
+				primaryTextColor: t("--foreground"),
+				primaryBorderColor: t("--primary"),
+				secondaryColor: t("--secondary"),
+				tertiaryColor: t("--paper"),
+				lineColor: t("--muted-foreground"),
+				textColor: t("--foreground"),
+				noteBkgColor: t("--highlight"),
+				noteTextColor: t("--highlight-foreground"),
 				fontSize: "14px",
 			},
 		});

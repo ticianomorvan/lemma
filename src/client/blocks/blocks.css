@@ -305,15 +305,7 @@
 	font-variant-numeric: tabular-nums;
 }
 .plot-region {
-	fill-opacity: 0.22;
-}
-:root[data-theme="dark"] .plot-region {
-	fill-opacity: 0.34;
-}
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme="light"]) .plot-region {
-		fill-opacity: 0.34;
-	}
+	fill-opacity: var(--region-opacity);
 }
 .plot-label,
 .plot-axis-label {
@@ -388,4 +380,17 @@
 .vega svg {
 	max-width: 100%;
 	height: auto;
+}
+
+/* A block still drawing when the page prints shows its source instead. */
+.diagram-print-source {
+	display: none;
+}
+@media print {
+	.diagram-loading {
+		display: none;
+	}
+	.diagram-print-source {
+		display: block;
+	}
 }

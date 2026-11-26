@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { createContext, use, useSyncExternalStore } from "react";
 
 export type Scheme = "light" | "dark";
 
@@ -20,10 +20,36 @@ function subscribe(onChange: () => void) {
 	};
 }
 
-/** The colour scheme in effect, for renderers that bake colours into their output. */
-export const useScheme = () =>
-	useSyncExternalStore(subscribe, scheme, () => "light" as Scheme);
+/**
+ * A scheme a subtree draws in whatever the page's is: the print copy of a
+ * session is light (it sits in a `.theme-light` box).
+ */
+export const SchemeOverride = createContext<Scheme | null>(null);
 
-/** The current value of a theme token, such as `--primary`, as a CSS colour. */
-export const token = (name: string) =>
-	getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+/** The colour scheme in effect, for renderers that bake colours into their output. */
+export function useScheme(): Scheme {
+	const forced = use(SchemeOverride);
+	const page = useSyncExternalStore(subscribe, scheme, () => "light" as Scheme);
+	return forced ?? page;
+}
+
+let lightProbe: HTMLElement | undefined;
+
+/**
+ * Reads theme tokens, such as `--primary`, as CSS colours in `inScheme`.
+ * Light tokens on a dark page come from a hidden `.theme-light` element.
+ */
+export function tokens(inScheme: Scheme): (name: string) => string {
+	let from = document.documentElement;
+	if (inScheme === "light" && scheme() === "dark") {
+		if (!lightProbe?.isConnected) {
+			lightProbe = document.createElement("div");
+			lightProbe.className = "theme-light";
+			lightProbe.hidden = true;
+			document.body.append(lightProbe);
+		}
+		from = lightProbe;
+	}
+	const style = getComputedStyle(from);
+	return (name) => style.getPropertyValue(name).trim();
+}
