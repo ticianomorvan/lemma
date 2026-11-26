@@ -89,7 +89,7 @@ export class Folder {
 	}
 
 	/** Writes through a temporary file and a rename, creating parent folders. */
-	writeAtomic(path: string, content: string) {
+	writeAtomic(path: string, content: string | Uint8Array) {
 		const target = this.jailed(path);
 		mkdirSync(dirname(target), { recursive: true });
 		const temp = join(
@@ -228,7 +228,8 @@ export class Folder {
 		const ours = this.written.get(path);
 		if (ours === undefined) return false;
 		try {
-			return hash(readFileSync(join(this.root, path), "utf8")) === ours;
+			// Bytes: a string hashes as its UTF-8, so text and binary writes compare alike.
+			return hash(readFileSync(join(this.root, path))) === ours;
 		} catch {
 			return false;
 		}
@@ -262,5 +263,5 @@ function isLink(path: string) {
 const escapeRegExp = (text: string) =>
 	text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const hash = (content: string) =>
+const hash = (content: string | Uint8Array) =>
 	createHash("sha256").update(content).digest("hex");

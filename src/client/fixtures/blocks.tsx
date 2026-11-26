@@ -4,7 +4,8 @@
  * each rendered through the real Markdown pipeline. Playwright checks it
  * (e2e/blocks.pw.ts); it is also the place to look at every block by eye.
  * Served from the build at /fixtures/blocks.html; `?theme=light|dark`.
- * It holds no data and calls no API.
+ * It holds no data; its `typst` blocks call the server's compiler, like an
+ * answer's do, so it needs a paired browser.
  */
 import "../zod-config.ts";
 import "../globals.css";
@@ -220,6 +221,38 @@ const CASES: { id: string; title: string; md: string }[] = [
 		id: "mermaid-broken",
 		title: "mermaid inválido",
 		md: fence("mermaid", "flowchart LR\n  A -->|sin cerrar"),
+	},
+	{
+		id: "typst-valid",
+		title: "Typst: matriz y tabla de verdad",
+		md: fence(
+			"typst",
+			`$ A = mat(1, 2; 3, 4), quad det(A) = -2 $
+#table(
+  columns: 3,
+  align: center,
+  $p$, $q$, $p -> q$,
+  [V], [V], [V],
+  [V], [F], [F],
+  [F], [V], [V],
+  [F], [F], [V],
+)`,
+		),
+	},
+	{
+		id: "typst-broken",
+		title: "typst inválido",
+		md: fence("typst", "$ x^2 + #let"),
+	},
+	{
+		id: "typst-package",
+		title: "typst que importa un paquete",
+		md: fence("typst", '#import "@preview/cetz:0.3.0": canvas\n#canvas({})'),
+	},
+	{
+		id: "typst-read",
+		title: "typst que lee un archivo",
+		md: fence("typst", '#read("../../../../etc/passwd")'),
 	},
 	{
 		id: "pending",

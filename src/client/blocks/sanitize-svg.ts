@@ -1,13 +1,16 @@
 /**
- * Strips an SVG produced from model-written source (Graphviz, Mermaid, Vega)
- * down to drawing. Only SVG elements on an allow-list survive, in the SVG
- * namespace (no `<img>`, `<link>`, `<meta>` from another namespace); links
- * become plain groups; event handlers and anything that names a URL go; CSS
+ * Strips an SVG produced from model-written source (Graphviz, Mermaid, Vega,
+ * Typst) down to drawing. Only SVG elements on an allow-list survive, in the
+ * SVG namespace (no `<img>`, `<link>`, `<meta>` from another namespace); links
+ * become plain groups; event handlers and anything that names a URL go, except
+ * a `<use>` pointing at an element of the same SVG (`href="#id"`: Typst draws
+ * every glyph that way); CSS
  * that could fetch (escapes, `@import`, `image-set()`, a `url()` outside the
  * document) is dropped. The server's Content-Security-Policy backs this up.
  */
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+const XLINK_NS = "http://www.w3.org/1999/xlink";
 
 /** SVG elements that only draw (lowercase). Everything else is dropped. */
 const ALLOWED = new Set([
@@ -33,6 +36,7 @@ const ALLOWED = new Set([
 	"radialgradient",
 	"stop",
 	"symbol",
+	"use",
 	"style",
 	"filter",
 	"fedropshadow",
@@ -81,6 +85,9 @@ export function safeCss(css: string): boolean {
 	return true;
 }
 
+/** A reference to an element by id: `#` and an id, nothing that can load. */
+const LOCAL_REF = /^#[\w./+=:-]+$/;
+
 export function sanitizeSvg<T extends Element>(root: T): T {
 	const walk = (el: Element) => {
 		for (const child of [...el.children]) {
@@ -106,6 +113,18 @@ export function sanitizeSvg<T extends Element>(root: T): T {
 				child.remove();
 				continue;
 			}
+			// A <use> may only show an element of this SVG.
+			if (
+				name === "use" &&
+				!LOCAL_REF.test(
+					child.getAttribute("href") ??
+						child.getAttributeNS(XLINK_NS, "href") ??
+						"",
+				)
+			) {
+				child.remove();
+				continue;
+			}
 			if (name === "style") {
 				if (!safeCss(child.textContent ?? "")) child.remove();
 				continue;
@@ -117,6 +136,13 @@ export function sanitizeSvg<T extends Element>(root: T): T {
 	const clean = (el: Element) => {
 		for (const attr of [...el.attributes]) {
 			const name = attr.name.toLowerCase();
+			if (
+				el.localName === "use" &&
+				(name === "href" || name === "xlink:href") &&
+				LOCAL_REF.test(attr.value)
+			) {
+				continue;
+			}
 			if (
 				name.startsWith("on") ||
 				name === "href" ||

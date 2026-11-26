@@ -69,6 +69,7 @@ export class SessionStore {
 		uploads: [],
 	};
 	private readonly listeners = new Set<Listener>();
+	private readonly folderListeners = new Set<(path: string) => void>();
 	private socket?: WebSocket;
 	private seq = 0;
 	private epoch?: number;
@@ -91,6 +92,17 @@ export class SessionStore {
 	};
 
 	getSnapshot = () => this.state;
+
+	/**
+	 * Calls `listener` with the root-relative path of each file changed in the
+	 * study folder by something other than Lemma (an editor, Claude's tools).
+	 */
+	onFolderChange(listener: (path: string) => void) {
+		this.folderListeners.add(listener);
+		return () => {
+			this.folderListeners.delete(listener);
+		};
+	}
 
 	/**
 	 * Sends a message, quoting `anchor` when given and taking the waiting
@@ -305,6 +317,7 @@ export class SessionStore {
 				if (message.code === "not_found") this.set({ connection: "missing" });
 				return;
 			case "folder":
+				for (const listener of this.folderListeners) listener(message.path);
 				return;
 		}
 	}

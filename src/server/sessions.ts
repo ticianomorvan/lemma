@@ -184,6 +184,12 @@ export class Sessions {
 		return clientMeta(meta);
 	}
 
+	/** The transcript's root-relative path, or undefined for an unknown session. */
+	pathOf(id: string): string | undefined {
+		if (!this.paths.has(id)) this.list();
+		return this.live.get(id)?.path ?? this.paths.get(id);
+	}
+
 	snapshot(id: string): SnapshotMessage | undefined {
 		const s = this.load(id);
 		return s && this.snapshotOf(id, s);

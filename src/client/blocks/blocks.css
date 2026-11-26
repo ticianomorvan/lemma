@@ -389,3 +389,28 @@
 	max-width: 100%;
 	height: auto;
 }
+
+/* ---- typst ---- */
+.typst {
+	display: flex;
+	justify-content: center;
+	width: max-content;
+	min-width: 100%;
+}
+.typst svg {
+	max-width: 100%;
+	height: auto;
+	overflow: visible;
+	color: var(--foreground);
+}
+/* Typst's default black ink becomes the theme's; colours the source sets stay. */
+.typst svg [fill="#000"],
+.typst svg [fill="#000000"],
+.typst svg [fill="#000000ff"] {
+	fill: currentColor;
+}
+.typst svg [stroke="#000"],
+.typst svg [stroke="#000000"],
+.typst svg [stroke="#000000ff"] {
+	stroke: currentColor;
+}

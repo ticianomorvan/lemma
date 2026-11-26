@@ -331,7 +331,11 @@ export type NoteBody = z.infer<typeof NoteBody>;
 export const NoteResponse = z.object({ id: z.string() });
 export type NoteResponse = z.infer<typeof NoteResponse>;
 
-/** `GET /api/courses/:course/materials`: the PDFs under `<course>/materials/`. */
+/**
+ * `GET /api/courses/:course/materials`: what Read can open, by path: the PDFs
+ * under `<course>/materials/` and the Typst files there and in
+ * `<course>/notes/` (shown as PDFs compiled by `GET /api/typst/pdf/*`).
+ */
 export const MaterialsResponse = z.object({
 	files: z.array(
 		z.object({
@@ -342,6 +346,26 @@ export const MaterialsResponse = z.object({
 	),
 });
 export type MaterialsResponse = z.infer<typeof MaterialsResponse>;
+
+/** `POST /api/typst/svg`: a `typst` block to draw. */
+export const TypstSvgBody = z.object({ source: z.string().max(20_000) });
+export type TypstSvgBody = z.infer<typeof TypstSvgBody>;
+
+/** The block's SVG, not yet sanitized; an error is a 422 with the message. */
+export const TypstSvgResponse = z.object({ svg: z.string() });
+export type TypstSvgResponse = z.infer<typeof TypstSvgResponse>;
+
+/**
+ * `POST /api/sessions/:id/export`: the session as Typst, written to
+ * `<course>/exports/<session file>.typ`, and compiled to a PDF beside it.
+ * `pdf` is null, with the error, when the PDF did not compile.
+ */
+export const ExportResponse = z.object({
+	typ: z.string(),
+	pdf: z.string().nullable(),
+	error: z.string().optional(),
+});
+export type ExportResponse = z.infer<typeof ExportResponse>;
 
 export const InterruptResponse = z.object({
 	/** False when no turn was running. */

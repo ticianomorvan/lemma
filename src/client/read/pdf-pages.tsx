@@ -1,7 +1,9 @@
 /**
  * The open PDF's pages, drawn by react-pdf (pdf.js) with its text layer so
  * text can be selected. Loaded lazily: pdf.js is the biggest chunk the app
- * has. The file comes from `/files/*`, which pdf.js reads in byte ranges.
+ * has. A PDF comes from `/files/*`, which pdf.js reads in byte ranges; a
+ * Typst file (`.typ`) from `/api/typst/pdf/*`, compiled on the server and
+ * read whole.
  *
  * - Only pages near the screen are drawn; the others keep their place with
  *   the first page's proportions, so long files stay light.
@@ -47,8 +49,11 @@ const OPTIONS = { disableAutoFetch: true, disableStream: true };
 export type Mark = { key: string; anchor: Anchor; kind: "question" | "note" };
 
 export function fileUrl(path: string) {
-	return `/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+	const encoded = path.split("/").map(encodeURIComponent).join("/");
+	return isTypst(path) ? `/api/typst/pdf/${encoded}` : `/files/${encoded}`;
 }
+
+const isTypst = (path: string) => /\.typ$/i.test(path);
 
 export default function PdfPages({
 	path,
@@ -146,7 +151,9 @@ export default function PdfPages({
 		onHover?.(undefined);
 	};
 
-	const file = useMemo(() => fileUrl(path), [path]);
+	const typst = useTypstPdf(path);
+	const url = useMemo(() => fileUrl(path), [path]);
+	const file = typst?.file ?? url;
 	return (
 		// A highlight is a pointer shortcut to its cards; the cards and pins
 		// are the keyboard path, so the page itself takes no focus.
@@ -165,61 +172,115 @@ export default function PdfPages({
 				if (key) onPassage?.(key);
 			}}
 		>
-			<Suspense fallback={<PageSkeleton ratio={ratio} width={width} />}>
-				<Document
-					file={file}
-					options={OPTIONS}
-					onLoadSuccess={async (pdf) => {
-						setCount(pdf.numPages);
-						onPages?.(pdf.numPages);
-						try {
-							const first = await pdf.getPage(1);
-							const { width: w, height: h } = first.getViewport({ scale: 1 });
-							if (w > 0) setRatio(h / w);
-						} finally {
-							setMeasured(true);
-						}
-					}}
-					error={
-						<p
-							role="alert"
-							className="py-16 text-center text-sm text-muted-foreground"
-						>
-							No se pudo abrir este PDF.
-						</p>
-					}
-					className={cn("grid", compact ? "gap-3" : "gap-6")}
+			{typst?.error !== undefined ? (
+				<div
+					role="alert"
+					className="mx-auto max-w-[560px] px-4 py-16 text-center text-sm text-muted-foreground"
 				>
-					{width > 0 &&
-						Array.from({ length: count }, (_, i) => {
-							const n = i + 1;
-							return (
-								<section
-									key={n}
-									data-page={n}
-									aria-label={`Página ${n}`}
-									className="pdf-page relative overflow-hidden rounded-[3px] shadow-sm"
-									style={{ minHeight: near.has(n) ? undefined : width * ratio }}
-								>
-									{near.has(n) && (
-										<Suspense
-											fallback={<div style={{ height: width * ratio }} />}
-										>
-											<Page
-												pageNumber={n}
-												width={width}
-												renderAnnotationLayer={false}
-												onRenderTextLayerSuccess={layersChanged}
-											/>
-										</Suspense>
-									)}
-								</section>
-							);
-						})}
-				</Document>
-			</Suspense>
+					<p>No se pudo compilar este archivo de Typst.</p>
+					<p className="mt-2 font-mono text-[12.5px] text-destructive">
+						{typst.error}
+					</p>
+				</div>
+			) : isTypst(path) && !typst ? (
+				<PageSkeleton ratio={ratio} width={width} />
+			) : (
+				<Suspense fallback={<PageSkeleton ratio={ratio} width={width} />}>
+					<Document
+						file={file}
+						options={OPTIONS}
+						onLoadSuccess={async (pdf) => {
+							setCount(pdf.numPages);
+							onPages?.(pdf.numPages);
+							try {
+								const first = await pdf.getPage(1);
+								const { width: w, height: h } = first.getViewport({ scale: 1 });
+								if (w > 0) setRatio(h / w);
+							} finally {
+								setMeasured(true);
+							}
+						}}
+						error={
+							<p
+								role="alert"
+								className="py-16 text-center text-sm text-muted-foreground"
+							>
+								No se pudo abrir este PDF.
+							</p>
+						}
+						className={cn("grid", compact ? "gap-3" : "gap-6")}
+					>
+						{width > 0 &&
+							Array.from({ length: count }, (_, i) => {
+								const n = i + 1;
+								return (
+									<section
+										key={n}
+										data-page={n}
+										aria-label={`Página ${n}`}
+										className="pdf-page relative overflow-hidden rounded-[3px] shadow-sm"
+										style={{
+											minHeight: near.has(n) ? undefined : width * ratio,
+										}}
+									>
+										{near.has(n) && (
+											<Suspense
+												fallback={<div style={{ height: width * ratio }} />}
+											>
+												<Page
+													pageNumber={n}
+													width={width}
+													renderAnnotationLayer={false}
+													onRenderTextLayerSuccess={layersChanged}
+												/>
+											</Suspense>
+										)}
+									</section>
+								);
+							})}
+					</Document>
+				</Suspense>
+			)}
 		</div>
 	);
+}
+
+/**
+ * A Typst file's PDF, compiled by the server and fetched here rather than by
+ * pdf.js, so a compile error shows its message (react-pdf would only see the
+ * status, and throw). Undefined while it loads; nothing for a PDF.
+ */
+function useTypstPdf(path: string) {
+	const [result, setResult] = useState<{
+		path: string;
+		/** Made once, so react-pdf sees the same file on every render. */
+		file?: { data: Uint8Array };
+		error?: string;
+	}>();
+	useEffect(() => {
+		if (!isTypst(path)) return;
+		let cancelled = false;
+		const done = (r: { file: { data: Uint8Array } } | { error: string }) => {
+			if (!cancelled) setResult({ path, ...r });
+		};
+		fetch(fileUrl(path))
+			.then(async (res) => {
+				if (res.ok) {
+					return done({
+						file: { data: new Uint8Array(await res.arrayBuffer()) },
+					});
+				}
+				const body = (await res.json().catch(() => null)) as {
+					error?: { message?: string };
+				} | null;
+				done({ error: body?.error?.message ?? `HTTP ${res.status}` });
+			})
+			.catch(() => done({ error: "No hay conexión con el servidor." }));
+		return () => {
+			cancelled = true;
+		};
+	}, [path]);
+	return isTypst(path) && result?.path === path ? result : undefined;
 }
 
 function PageSkeleton({ ratio, width }: { ratio: number; width: number }) {

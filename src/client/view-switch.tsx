@@ -84,8 +84,8 @@ export function ViewSwitch({
 			<>
 				<span className="font-medium">Este curso no tiene apuntes</span>
 				<span className="opacity-80">
-					Copiá los PDFs del curso a {noPdfsIn}/materials/, en la carpeta de
-					estudio.
+					Copiá los PDFs del curso a {noPdfsIn}/materials/, o escribí notas de
+					Typst en {noPdfsIn}/notes/, en la carpeta de estudio.
 				</span>
 			</>
 		);

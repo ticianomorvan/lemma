@@ -91,7 +91,7 @@ study/
   | `fitch` | our JSON schema → KaTeX lines with nested scope bars | Fitch-style proofs, if the course uses them |
   | `mermaid` | Mermaid 12, `securityLevel: 'strict'` | flowcharts, state machines, sequences |
   | `dot` | `@viz-js/viz` (Graphviz WASM) | automata, graphs, trees |
-  | `typst` | typst.ts, lazy-loaded (~12 MB, cached) | Typst snippets, previews of `.typ` notes |
+  | `typst` | typst.ts on the server (WebAssembly in a Worker), drawn as SVG; step 12 moved it off the page (architecture.md → Typst) | Typst snippets, previews of `.typ` notes |
 
 - **Why `proof` and `fitch` are our own blocks.** KaTeX has no `bussproofs`, the usual LaTeX package for proof trees, so Claude can't write them as math. Truth tables need nothing special: they are Markdown tables with inline math, and KaTeX covers the logic symbols (`\vdash`, `\models`, `\forall`, `\neg`, `\to`).
   - `proof` schema: `{conclusion, rule?, premises?:[…], discharged?}`, with every formula as LaTeX. A node without `premises` is an assumption; on it, `discharged` is the label of a discharged assumption (`[A]¹`), and on a rule it is the label that rule discharges (`→I¹`). An axiom with a line above it has `premises: []`.

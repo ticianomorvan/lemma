@@ -93,6 +93,7 @@ function Read({
 		},
 		[memory, file, chat],
 	);
+	const version = useRecompiles(store, file);
 	const [target, setTarget] = useState<{ turnId: string; n: number }>();
 	const [active, setActive] = useState<string>();
 	const [pending, setPending] = useState<Anchor>();
@@ -186,6 +187,9 @@ function Read({
 	const pdf = (
 		<Suspense fallback={null}>
 			<PdfPages
+				// A Typst file is compiled anew when a `.typ` changes on disk (it or
+				// a file it imports), and opens again where the reader was.
+				key={version}
 				path={file}
 				marks={marks}
 				active={active}
@@ -194,7 +198,7 @@ function Read({
 				onHover={phone ? undefined : setActive}
 				onPages={setPages}
 				onPage={setPage}
-				place={kept?.place}
+				place={version ? place.current : kept?.place}
 				onPlace={onPlace}
 				compact={phone}
 			/>
@@ -272,4 +276,19 @@ function Read({
 			status={status}
 		/>
 	);
+}
+
+/**
+ * How many times a Typst file has changed on disk since it opened: any `.typ`
+ * in the folder counts, since the file may import it. Always 0 for a PDF.
+ */
+function useRecompiles(store: SessionStore, file: string) {
+	const [version, setVersion] = useState(0);
+	useEffect(() => {
+		if (!/\.typ$/i.test(file)) return;
+		return store.onFolderChange((path) => {
+			if (/\.typ$/i.test(path)) setVersion((v) => v + 1);
+		});
+	}, [store, file]);
+	return version;
 }

@@ -26,6 +26,12 @@ export const skillFile = (mode: string) => `${SKILLS}/${mode}/SKILL.md`;
 /** Where a course's PDFs and other material live. */
 export const materialsDir = (course: string) => `${course}/materials`;
 
+/** Where notes live, Claude's and the student's (`.md` or `.typ`). */
+export const notesDir = (course: string) => `${course}/notes`;
+
+/** Where "Exportar" writes a session's `.typ` and `.pdf`. */
+export const exportsDir = (course: string) => `${course}/exports`;
+
 /** A top-level folder that is a course: not hidden and not reserved. */
 export function isCourse(name: string) {
 	return !name.startsWith(".") && !RESERVED.has(name.toLowerCase());

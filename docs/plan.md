@@ -25,6 +25,8 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 | `d3-scale`, `d3-shape` | 4.0.3, 3.2.1 |
 | `vega`, `vega-lite`, `vega-interpreter` | 6.4.0, 6.5.0, 2.3.2 |
 | `mermaid` | 12.3.0 |
+| `@myriaddreamin/typst.ts`, `-web-compiler`, `-renderer` | 0.7.0 (Typst 0.14.2); fonts from `typst-assets` 0.14.2, `@preview/mitex` 0.2.7 |
+| `unified`, `remark-parse` | 11.0.5, 11.0.0 (the export's Markdown parser) |
 | `@playwright/test` | 1.65.1 |
 | `@biomejs/biome` | 2.6.8 |
 | `vite` | 8.3.8 |
@@ -138,7 +140,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 - **Proof:** in *review*, 3 seeded wrong proofs each get their first wrong step named without the full solution. You check these by hand.
 
 ### 12. Typst
-- **What:** `typst` blocks (typst.ts, lazy-loaded), a preview of `.typ` notes, and session export to `.typ`/PDF.
+- **What:** `typst` blocks (typst.ts, compiled on the server in a Worker: architecture.md → Typst), `.typ` files in Read's file menu (compiled to PDF, recompiled when a `.typ` changes), and "Exportar" to `<course>/exports/<session>.typ` and `.pdf`.
 - **Proof:** a warm render takes under 1 s (measured and printed), and the export compiles with the `typst` CLI.
 
 ### 13. Installable app

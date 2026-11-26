@@ -3,7 +3,7 @@
  * (agent/prompt.ts) and the renderers themselves (client/blocks) to agree on.
  */
 
-/** The fenced block kinds the client draws. `typst` joins in step 12. */
+/** The fenced block kinds the client draws (`typst` through the server). */
 export const BLOCK_KIND_NAMES = [
 	"dot",
 	"proof",
@@ -11,7 +11,13 @@ export const BLOCK_KIND_NAMES = [
 	"plot",
 	"vega-lite",
 	"mermaid",
+	"typst",
 ] as const;
+
+export type BlockKindName = (typeof BLOCK_KIND_NAMES)[number];
+
+export const isBlockKindName = (lang: string): lang is BlockKindName =>
+	(BLOCK_KIND_NAMES as readonly string[]).includes(lang);
 
 /** The functions a `plot` expression may call, as the prompt shows them. */
 export const PLOT_FUNCTIONS = [

@@ -9,6 +9,7 @@ const KINDS = [
 	"plot",
 	"vega-lite",
 	"mermaid",
+	"typst",
 ] as const;
 /** What a rendered block of each kind has in its body. */
 const BODY: Record<(typeof KINDS)[number], string> = {
@@ -18,6 +19,7 @@ const BODY: Record<(typeof KINDS)[number], string> = {
 	plot: ".plot-svg svg path",
 	"vega-lite": ".vega svg",
 	mermaid: ".mermaid svg",
+	typst: ".typst svg use",
 };
 
 const block = (page: Page, id: string) =>
@@ -67,6 +69,9 @@ test("each valid block renders, and each broken one shows its source and the err
 	await expect(block(page, "dot-broken").locator(".diagram-source")).toHaveText(
 		"digraph { a -> }",
 	);
+	await expect(
+		block(page, "typst-broken").locator(".diagram-error"),
+	).toContainText("línea 1:");
 	// tan(x) on [-4, 4] has poles at ±π/2: three branches, not one joined line.
 	const tan = await block(page, "plot-poles")
 		.locator(".plot-svg svg path")
@@ -108,7 +113,12 @@ test("links and handlers in model-written diagrams are stripped", async ({
 				found.push(el.localName);
 			}
 			for (const a of el.attributes) {
-				if (/^on|href$/i.test(a.name) || /javascript:/i.test(a.value)) {
+				// Typst's glyphs are <use href="#…"> of paths in the same SVG.
+				const local = el.localName === "use" && a.value.startsWith("#");
+				if (
+					(/^on|href$/i.test(a.name) && !local) ||
+					/javascript:/i.test(a.value)
+				) {
 					found.push(`${el.localName}[${a.name}]`);
 				}
 			}
@@ -120,13 +130,15 @@ test("links and handlers in model-written diagrams are stripped", async ({
 	expect(dialogs).toEqual([]);
 });
 
-test("blocks that bring their own config or generate data are refused", async ({
+test("blocks that bring their own config, generate data or reach for files are refused", async ({
 	page,
 }) => {
-	await openFixtures(page);
+	const dialogs = await openFixtures(page);
 	for (const [id, message] of [
 		["mermaid-init", "directivas"],
 		["vega-sequence", "sequence"],
+		["typst-package", "el paquete @preview/cetz:0.3.0 no está disponible"],
+		["typst-read", "no se puede leer un archivo fuera de la carpeta"],
 	] as const) {
 		await expect(block(page, id)).toHaveAttribute("data-state", "error", {
 			timeout: 15_000,
@@ -135,6 +147,41 @@ test("blocks that bring their own config or generate data are refused", async ({
 			message,
 		);
 	}
+	expect(dialogs).toEqual([]);
+});
+
+test("a typst block renders to SVG in well under a second once the compiler is warm", async ({
+	page,
+}) => {
+	await openFixtures(page);
+	await expect(block(page, "typst-valid")).toHaveAttribute("data-state", "ok", {
+		timeout: 15_000,
+	});
+	// What the renderer does for a block (typst.tsx): ask the server, then
+	// parse and sanitize the SVG. A new source each time, so nothing is cached.
+	const times = await page.evaluate(async () => {
+		const probe = (
+			window as unknown as { sanitizeProbe: (m: string) => string }
+		).sanitizeProbe;
+		const out: number[] = [];
+		for (let i = 0; i < 5; i++) {
+			const t = performance.now();
+			const res = await fetch("/api/typst/svg", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					source: `$ A = mat(1, 2; 3, 4), quad det(A) = -2 $ // ${i}`,
+				}),
+			});
+			probe(((await res.json()) as { svg: string }).svg);
+			out.push(performance.now() - t);
+		}
+		return out;
+	});
+	console.log(
+		`typst block in the browser, warm: ${times.map((t) => t.toFixed(1)).join(", ")} ms`,
+	);
+	expect(Math.max(...times)).toBeLessThan(1000);
 });
 
 test("the sanitizer keeps drawing and drops anything that could fetch or run", async ({
@@ -282,6 +329,7 @@ test("the app's first load stays small: diagram renderers load on demand", () =>
 	);
 	// 941 kB before step 6 split the renderers, KaTeX and Markdown out;
 	// 557 kB after step 10. Step 11's mode cards add 5 kB (its menu, Base
-	// UI's Menu, is a lazy chunk).
+	// UI's Menu, is a lazy chunk). Step 12 adds no compiler: Typst runs on
+	// the server, and the export menu is a lazy chunk.
 	expect(bytes).toBeLessThan(570_000);
 });

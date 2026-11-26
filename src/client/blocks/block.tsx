@@ -28,6 +28,7 @@ const RENDERERS: Record<BlockKind, Renderer> = {
 	plot: lazy(() => import("./plot.tsx")),
 	"vega-lite": lazy(() => import("./vega-lite.tsx")),
 	mermaid: lazy(() => import("./mermaid.tsx")),
+	typst: lazy(() => import("./typst.tsx")),
 };
 
 type State = "ok" | "error" | "pending" | "loading";

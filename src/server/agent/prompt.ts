@@ -43,6 +43,10 @@ Draw diagrams only in the fenced block kinds below, never TikZ, ASCII art or ima
   \`{"xDomain": [-4, 4], "yDomain": [0, 0.45], "items": [{"region": {"fn": "normpdf(x)", "from": 1.5, "to": null}, "label": "P(X>1{,}5)"}, {"fn": "normpdf(x)", "label": "N(0,1)"}, {"vline": 1.5}]}\`
 - \`vega-lite\`: a Vega-Lite JSON spec, for histograms, box plots and scatter plots of data. Put the data inline in \`"data": {"values": [ … ]}\`; URLs are not loaded. Leave out \`width\` so the chart fills the column.
 - \`mermaid\`: Mermaid, for flowcharts, state machines and sequence diagrams. No \`click\` directives.
+- \`typst\`: a Typst 0.14 snippet, for what Typst lays out better than the kinds above: a table whose cells hold math, a matrix or a derivation that needs alignment, a small formatted layout. Math inside a \`typst\` block is Typst math, not LaTeX: \`$ A = mat(1, 2; 3, 4) $\`, \`frac(a, b)\`, \`p -> q\`, \`RR\`. It is drawn on its own page sized to its content, so don't set \`page\`. It sees no files and no packages: no \`#import "@preview/…"\`, \`read\`, \`image\` or \`include\`. Everyday formulas still go in \`$…$\` as LaTeX, not in a \`typst\` block.
+
+## Notes
+- When the student asks for notes or a summary to keep, write them to \`<course>/notes/<name>.md\`, or \`<course>/notes/<name>.typ\` in Typst when layout matters. A \`.typ\` note opens in the Read view as a compiled document and updates when you edit it. It may import other files in the study folder, but no \`@preview\` packages: they are not available.
 
 ## Sources
 - Point to course material as \`file.pdf#p=12\` (the file's path in the study folder and the page).

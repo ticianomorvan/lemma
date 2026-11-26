@@ -51,6 +51,7 @@ const ReadView = lazy(() =>
 
 /** The header's mode menu: Base UI's Menu stays out of the first load. */
 const ModeMenu = lazy(() => import("./modes/mode-menu.tsx"));
+const ExportMenu = lazy(() => import("./export-menu.tsx"));
 
 /** The course a new session goes in when the folder has none yet. */
 const FIRST_COURSE = "general";
@@ -196,6 +197,15 @@ export function ChatApp() {
 						<Suspense fallback={null}>
 							<ModeMenu
 								meta={meta && meta.id === id ? meta : undefined}
+								compact={layout === "phone"}
+							/>
+						</Suspense>
+					)}
+					{id && meta?.id === id && (
+						<Suspense fallback={null}>
+							<ExportMenu
+								session={id}
+								course={meta.course}
 								compact={layout === "phone"}
 							/>
 						</Suspense>

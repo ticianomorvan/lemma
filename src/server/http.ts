@@ -8,6 +8,7 @@ import {
 	type Device,
 	type DevicesResponse,
 	type ErrorResponse,
+	type ExportResponse,
 	type InterruptResponse,
 	type MaterialsResponse,
 	NoteBody,
@@ -19,12 +20,14 @@ import {
 	type ServerMessage,
 	SetFolderBody,
 	type StateResponse,
+	TypstSvgBody,
+	type TypstSvgResponse,
 } from "../shared/protocol.ts";
 import type { AgentDriver } from "./agent/driver.ts";
 import { type Auth, CODE_TTL_MS } from "./auth/auth.ts";
 import { chooseStudyFolder } from "./config.ts";
 import { Folder } from "./folder/folder.ts";
-import { isCourseName, materialsDir } from "./folder/layout.ts";
+import { isCourseName, materialsDir, notesDir } from "./folder/layout.ts";
 import { installModes } from "./modes/modes.ts";
 import {
 	MAX_PHOTO_BYTES,
@@ -33,6 +36,8 @@ import {
 	sniffPhoto,
 } from "./photos.ts";
 import { BadRequest, Sessions, topic } from "./sessions.ts";
+import { exportSession } from "./typst/export.ts";
+import { Typst } from "./typst/typst.ts";
 
 export type ServerOptions = {
 	port: number;
@@ -60,6 +65,8 @@ export type ServerOptions = {
 	 * `lan.ts`); null when there is no LAN. Without it, LAN mode is off.
 	 */
 	lanAddress?: () => string | null;
+	/** Compiles `typst` blocks, `.typ` previews and exports; one is made if absent. */
+	typst?: Typst;
 };
 
 /** Per-socket data: the device the socket was opened by. */
@@ -81,6 +88,7 @@ export async function startServer({
 	auth,
 	onNoDevices,
 	lanAddress,
+	typst = new Typst(),
 }: ServerOptions) {
 	/** The LAN listener, while LAN mode is on: the same routes on the LAN address. */
 	let lan: Bun.Server<Socket> | null = null;
@@ -411,6 +419,32 @@ export async function startServer({
 				"/files/*": {
 					GET: withStudy((req, { folder }) => serveFile(req, folder)),
 				},
+				"/api/typst/svg": {
+					POST: paired((req) =>
+						withBody(req, TypstSvgBody, async ({ source }) => {
+							const drawn = await typst.svg(source);
+							return drawn.ok
+								? Response.json({ svg: drawn.value } satisfies TypstSvgResponse)
+								: error(422, "typst_error", drawn.error);
+						}),
+					),
+				},
+				"/api/typst/pdf/*": {
+					GET: withStudy((req, { folder }) => servePreview(req, folder, typst)),
+				},
+				"/api/sessions/:id/export": {
+					POST: withStudy(async (req, { folder, sessions }) => {
+						const path = sessions.pathOf(req.params.id);
+						if (!path) return found(undefined);
+						return Response.json(
+							(await exportSession(
+								folder,
+								typst,
+								path,
+							)) satisfies ExportResponse,
+						);
+					}),
+				},
 				"/api/sessions/:id/interrupt": {
 					POST: withStudy(async (req, { sessions }) => {
 						const interrupted = await sessions.interrupt(req.params.id);
@@ -490,6 +524,7 @@ export async function startServer({
 		lan = null;
 		study?.unwatch();
 		study?.sessions.close();
+		typst.close();
 		return stop(closeActiveConnections);
 	};
 	return server;
@@ -582,11 +617,15 @@ function parseJson(text: string): unknown {
 
 // ── Study files ─────────────────────────────────────────────────────────────
 
-/** The PDFs under `<course>/materials/`, a few folders deep, by path. */
+/**
+ * What Read can open, by path: the PDFs and Typst files under
+ * `<course>/materials/` and the Typst files under `<course>/notes/`, a few
+ * folders deep.
+ */
 function materials(folder: Folder, course: string) {
 	if (!isCourseName(course)) return [];
 	const files: MaterialsResponse["files"] = [];
-	const walk = (dir: string, depth: number) => {
+	const walk = (dir: string, depth: number, kinds: RegExp) => {
 		let entries: ReturnType<Folder["list"]>;
 		try {
 			entries = folder.list(dir);
@@ -597,13 +636,14 @@ function materials(folder: Folder, course: string) {
 		for (const e of entries) {
 			const path = `${dir}/${e.name}`;
 			if (e.dir) {
-				if (depth < 3) walk(path, depth + 1);
-			} else if (/\.pdf$/i.test(e.name) && folder.resolve(path)) {
+				if (depth < 3) walk(path, depth + 1, kinds);
+			} else if (kinds.test(e.name) && folder.resolve(path)) {
 				files.push({ path, name: e.name });
 			}
 		}
 	};
-	walk(materialsDir(course), 0);
+	walk(materialsDir(course), 0, /\.(pdf|typ)$/i);
+	walk(notesDir(course), 0, /\.typ$/i);
 	return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -626,22 +666,8 @@ const FILE_TYPES: Record<string, string> = {
  */
 async function serveFile(req: Request, folder: Folder) {
 	const notFound = () => error(404, "not_found", "no such file");
-	let path: string;
-	try {
-		path = new URL(req.url).pathname
-			.slice("/files/".length)
-			.split("/")
-			.map(decodeURIComponent)
-			.join("/");
-	} catch {
-		return notFound();
-	}
-	const hidden = (p: string) =>
-		p.split("/").some((x) => x === "" || x.startsWith("."));
-	if (hidden(path) || /[\\\0]/.test(path)) return notFound();
-	const real = folder.resolve(path);
-	// A link inside the folder that points into a hidden one is refused too.
-	if (!real || hidden(folder.relative(real))) return notFound();
+	const real = studyFile(req, "/files/", folder);
+	if (!real) return notFound();
 	const file = Bun.file(real);
 	let size: number;
 	try {
@@ -680,6 +706,66 @@ async function serveFile(req: Request, folder: Folder) {
 			...headers,
 			"content-range": `bytes ${start}-${end}/${size}`,
 			"content-length": String(end - start + 1),
+		},
+	});
+}
+
+/**
+ * The real path of the study file a URL names after `prefix`, or null for a
+ * hidden segment (`.claude/…`), a folder path, or anything outside the root
+ * (`..`, an absolute path, a symlink out, or into a hidden folder).
+ */
+function studyFile(
+	req: Request,
+	prefix: string,
+	folder: Folder,
+): string | null {
+	let path: string;
+	try {
+		path = new URL(req.url).pathname
+			.slice(prefix.length)
+			.split("/")
+			.map(decodeURIComponent)
+			.join("/");
+	} catch {
+		return null;
+	}
+	const hidden = (p: string) =>
+		p.split("/").some((x) => x === "" || x.startsWith("."));
+	if (hidden(path) || /[\\\0]/.test(path)) return null;
+	const real = folder.resolve(path);
+	// A link inside the folder that points into a hidden one is refused too.
+	if (!real || hidden(folder.relative(real))) return null;
+	return real;
+}
+
+/**
+ * A `.typ` file in the study folder, compiled to PDF for Read. It may import
+ * and show other files in the folder (through the same jail), but no hidden
+ * ones and no packages. The PDF is built per request and never stored, so
+ * the answer has no ranges: pdf.js then reads it whole.
+ */
+async function servePreview(req: Request, folder: Folder, typst: Typst) {
+	const real = studyFile(req, "/api/typst/pdf/", folder);
+	const isFile = await Bun.file(real ?? "")
+		.stat()
+		.then((s) => s.isFile())
+		.catch(() => false);
+	if (!real || !isFile || extname(real).toLowerCase() !== ".typ") {
+		return error(404, "not_found", "no such Typst file");
+	}
+	const compiled = await typst.pdf({
+		root: folder.root,
+		main: folder.relative(real),
+		files: "folder",
+	});
+	if (!compiled.ok) return error(422, "typst_error", compiled.error);
+	return new Response(compiled.value as Uint8Array<ArrayBuffer>, {
+		headers: {
+			"content-type": "application/pdf",
+			"x-content-type-options": "nosniff",
+			"content-security-policy": "sandbox; default-src 'none'",
+			"cache-control": "no-store",
 		},
 	});
 }
