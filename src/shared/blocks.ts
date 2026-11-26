@@ -3,7 +3,7 @@
  * (agent/prompt.ts) and the renderers themselves (client/blocks) to agree on.
  */
 
-/** The fenced block kinds the client draws. `typst` joins in step 12. */
+/** The fenced block kinds the client draws. */
 export const BLOCK_KIND_NAMES = [
 	"dot",
 	"proof",

@@ -137,15 +137,16 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 - **What:** skills in `.claude/skills/` (read-along, explain, review, exam prep), the mode chips, and `mode` in the session's front matter.
 - **Proof:** in *review*, 3 seeded wrong proofs each get their first wrong step named without the full solution. You check these by hand.
 
-### 12. Typst
-- **What:** `typst` blocks (typst.ts, lazy-loaded), a preview of `.typ` notes, and session export to `.typ`/PDF.
-- **Proof:** a warm render takes under 1 s (measured and printed), and the export compiles with the `typst` CLI.
+### 12. Printable sessions
+- **What:** a print stylesheet so a session prints cleanly to PDF with the browser's own print (Practice view, math and diagram blocks included), and an "Imprimir" action. Typst moved to "Not yet planned" (PR #27 closed: a 28 MB compiler for a feature the browser covers).
+- **Proof:** a real multi-turn session (math, a diagram block, a note, a photo) saved as PDF from Chrome, with screenshots of the pages; nothing interactive or cut off in print.
 
 ### 13. Installable app
 - **What:** a PWA manifest and an app-shell service worker, so it can be installed as a Chrome app with its own Dock icon.
 - **Proof:** it installs and opens in its own window, and works after the server restarts.
 
 ## Not yet planned
+- Typst: `typst` blocks, previews of `.typ` notes, export to `.typ`. Built as PR #27 and closed unmerged: its one real use, a session as PDF, is the browser's print (step 12).
 - A desktop shell (Tauri).
 - TikZ blocks.
 - Flashcards and spaced repetition.

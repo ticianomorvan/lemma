@@ -45,6 +45,7 @@ export function checkMermaid(source: string) {
 }
 
 function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
+	const t = (name: string) => token(name, scheme);
 	const run = queue.then(async () => {
 		checkMermaid(source);
 		mermaid.initialize({
@@ -56,19 +57,19 @@ function render(source: string, scheme: Scheme): Promise<SVGSVGElement> {
 			htmlLabels: false,
 			theme: "base",
 			darkMode: scheme === "dark",
-			fontFamily: token("--font-sans") || "sans-serif",
+			fontFamily: t("--font-sans") || "sans-serif",
 			themeVariables: {
-				background: token("--card"),
-				mainBkg: token("--card"),
-				primaryColor: token("--primary-soft"),
-				primaryTextColor: token("--foreground"),
-				primaryBorderColor: token("--primary"),
-				secondaryColor: token("--secondary"),
-				tertiaryColor: token("--paper"),
-				lineColor: token("--muted-foreground"),
-				textColor: token("--foreground"),
-				noteBkgColor: token("--highlight"),
-				noteTextColor: token("--highlight-foreground"),
+				background: t("--card"),
+				mainBkg: t("--card"),
+				primaryColor: t("--primary-soft"),
+				primaryTextColor: t("--foreground"),
+				primaryBorderColor: t("--primary"),
+				secondaryColor: t("--secondary"),
+				tertiaryColor: t("--paper"),
+				lineColor: t("--muted-foreground"),
+				textColor: t("--foreground"),
+				noteBkgColor: t("--highlight"),
+				noteTextColor: t("--highlight-foreground"),
 				fontSize: "14px",
 			},
 		});

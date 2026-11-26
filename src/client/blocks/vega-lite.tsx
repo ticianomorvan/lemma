@@ -36,29 +36,30 @@ function refusingLoader() {
 	return { loader, state };
 }
 
-function config(): Config {
-	const ink = token("--foreground");
-	const muted = token("--muted-foreground");
-	const line = token("--border");
-	const font = token("--font-sans") || "sans-serif";
+function config(scheme: Scheme): Config {
+	const t = (name: string) => token(name, scheme);
+	const ink = t("--foreground");
+	const muted = t("--muted-foreground");
+	const line = t("--border");
+	const font = t("--font-sans") || "sans-serif";
 	return {
 		background: "transparent",
 		font,
 		view: { stroke: null },
-		mark: { color: token("--primary") },
+		mark: { color: t("--primary") },
 		range: {
 			category: [
-				token("--primary"),
-				token("--warning"),
-				token("--success"),
-				token("--destructive"),
-				token("--subtle"),
+				t("--primary"),
+				t("--warning"),
+				t("--success"),
+				t("--destructive"),
+				t("--subtle"),
 			],
 		},
 		axis: {
-			domainColor: token("--input"),
+			domainColor: t("--input"),
 			gridColor: line,
-			tickColor: token("--input"),
+			tickColor: t("--input"),
 			labelColor: muted,
 			titleColor: ink,
 			labelFont: font,
@@ -111,7 +112,11 @@ export function checkSpec(node: unknown, depth = 0, key = ""): void {
 	}
 }
 
-async function render(source: string, width: number): Promise<SVGSVGElement> {
+async function render(
+	source: string,
+	width: number,
+	scheme: Scheme,
+): Promise<SVGSVGElement> {
 	let spec: TopLevelSpec;
 	try {
 		spec = JSON.parse(source);
@@ -147,7 +152,10 @@ async function render(source: string, width: number): Promise<SVGSVGElement> {
 		debug: () => logger,
 	};
 	const { loader, state } = refusingLoader();
-	const vg = compile(sized, { config: config(), logger: logger as never }).spec;
+	const vg = compile(sized, {
+		config: config(scheme),
+		logger: logger as never,
+	}).spec;
 	const view = new View(parse(vg, undefined, { ast: true }), {
 		expr: expressionInterpreter,
 		loader: loader as never,
@@ -212,7 +220,7 @@ function Chart({
 		<SvgBlock
 			kind="vega-lite"
 			cacheKey={`${scheme}\0${width}\0${source}`}
-			render={() => render(source, width)}
+			render={() => render(source, width, scheme)}
 			scroll={false}
 		/>
 	);

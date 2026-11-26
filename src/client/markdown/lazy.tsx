@@ -10,10 +10,14 @@ const load = import("./markdown.tsx");
 const Lazy = lazy(() => load.then((m) => ({ default: m.Markdown })));
 
 export function Markdown(props: { text: string; question?: boolean }) {
-	const plain = <p className="whitespace-pre-wrap">{props.text}</p>;
+	const plain = (loading?: boolean) => (
+		<p className="whitespace-pre-wrap" data-md-loading={loading || undefined}>
+			{props.text}
+		</p>
+	);
 	return (
-		<PlainOnError fallback={plain}>
-			<Suspense fallback={plain}>
+		<PlainOnError fallback={plain()}>
+			<Suspense fallback={plain(true)}>
 				<Lazy {...props} />
 			</Suspense>
 		</PlainOnError>

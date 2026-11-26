@@ -1,7 +1,7 @@
 /**
  * The fenced block kinds that render as diagrams (docs/spec.md → Rendering
  * pipeline): the label each one's card shows, and the longest source it
- * accepts (block.tsx checks it before rendering). `typst` joins in step 12.
+ * accepts (block.tsx checks it before rendering).
  */
 import type { BLOCK_KIND_NAMES } from "../../shared/blocks.ts";
 

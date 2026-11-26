@@ -81,7 +81,7 @@ study/
 - **Copy.** The KaTeX `copy-tex` extension, so copying an equation yields its LaTeX.
 - **Punctuation after math.** Glue it to the math with `white-space: nowrap`, so `$B$.` never wraps the period onto its own line. The prototype hit this. A rehype plugin (`client/markdown/glue.ts`) wraps inline math and touching punctuation, opening or closing, in `span.math-glue`.
 - **Prototype.** `prototype/workspace.html` has the three explored layouts (Split, Notebook, Margin). Decided: they become two views of one session, Read (Margin plus an openable chat panel, which is Split) and Practice (Notebook). See `architecture.md` → Views, which also records the Read details step 7 settled in a prototype on the real stack.
-- **Fenced blocks Claude may emit.** Each block kind has one renderer. All of them are declarative data, and none of them runs code Claude wrote.
+- **Fenced blocks Claude may emit.** Each block kind has one renderer. All of them are declarative data, and none of them runs code Claude wrote. (A `typst` block was planned and dropped: see plan.md → Not yet planned.)
 
   | Block | Renders with | For |
   |---|---|---|
@@ -91,7 +91,6 @@ study/
   | `fitch` | our JSON schema → KaTeX lines with nested scope bars | Fitch-style proofs, if the course uses them |
   | `mermaid` | Mermaid 12, `securityLevel: 'strict'` | flowcharts, state machines, sequences |
   | `dot` | `@viz-js/viz` (Graphviz WASM) | automata, graphs, trees |
-  | `typst` | typst.ts, lazy-loaded (~12 MB, cached) | Typst snippets, previews of `.typ` notes |
 
 - **Why `proof` and `fitch` are our own blocks.** KaTeX has no `bussproofs`, the usual LaTeX package for proof trees, so Claude can't write them as math. Truth tables need nothing special: they are Markdown tables with inline math, and KaTeX covers the logic symbols (`\vdash`, `\models`, `\forall`, `\neg`, `\to`).
   - `proof` schema: `{conclusion, rule?, premises?:[…], discharged?}`, with every formula as LaTeX. A node without `premises` is an assumption; on it, `discharged` is the label of a discharged assumption (`[A]¹`), and on a rule it is the label that rule discharges (`→I¹`). An axiom with a line above it has `premises: []`.
@@ -141,9 +140,7 @@ Each slice is shippable on its own, and its proof runs on a production build (`b
    - Proof: then an automated test that pairs a device, POSTs an image, and checks it arrives in the session for every watching client. A revoked or bad token gets a 403.
 6. **Study modes as skills.**
    - Proof: in *review my solution* on a seeded wrong proof, Claude names the first wrong step without giving the full solution. Check it by hand on 3 seeded exercises.
-7. **Typst.** `typst` blocks, a preview of `.typ` notes, and an "export session to Typst/PDF" action.
-   - Proof: a fixture block renders to SVG in under 1 s with the compiler warm, measured and printed.
-   - Proof: the export compiles with the `typst` CLI.
+7. **Typst** *(dropped; see plan.md → Not yet planned)*. `typst` blocks, a preview of `.typ` notes, and an "export session to Typst/PDF" action. A session as PDF is now the browser's print (plan.md, step 12).
 8. **Optional desktop shell.** Only if the PWA window falls short.
    - Proof: a `.dmg` launches and the server child process exits when the app quits.
 

@@ -72,6 +72,10 @@ export function DiagramBlock({
 					fallback={
 						<Report state="loading" set={setState}>
 							<div className="diagram-loading" />
+							{/* A print that can't wait for the drawing shows the source. */}
+							<pre className="diagram-source diagram-print-source">
+								{source}
+							</pre>
 						</Report>
 					}
 				>

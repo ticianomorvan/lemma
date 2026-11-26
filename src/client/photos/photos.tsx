@@ -162,7 +162,14 @@ export function PhotoStrip({
 }
 
 /** A question's photos, in its card. */
-export function SentPhotos({ photos }: { photos: Attachment[] }) {
+export function SentPhotos({
+	photos,
+	eager = false,
+}: {
+	photos: Attachment[];
+	/** Load them now rather than when scrolled to. */
+	eager?: boolean;
+}) {
 	if (photos.length === 0) return null;
 	return (
 		<div className="mb-2 flex flex-wrap gap-2">
@@ -177,7 +184,7 @@ export function SentPhotos({ photos }: { photos: Attachment[] }) {
 					<img
 						src={fileUrl(a.path)}
 						alt={`Foto ${i + 1} de la pregunta`}
-						loading="lazy"
+						loading={eager ? "eager" : "lazy"}
 						className="max-h-56 w-auto max-w-full object-contain"
 					/>
 				</a>
