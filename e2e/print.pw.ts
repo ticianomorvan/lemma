@@ -16,6 +16,7 @@ const COURSE = "imprimir";
 const STUDY = ".e2e/study";
 const NAME = "2026-11-26-impresa";
 const ID = "5e551000-0000-4000-8000-00000000c0de";
+const CHART_ID = "5e551000-0000-4000-8000-00000000c0df";
 const TITLE = "Contrarrecíproco y la normal";
 const PHOTO = `${COURSE}/sessions/${NAME}/001-photo.png`;
 const PDF = `${COURSE}/materials/apunte.pdf`;
@@ -153,10 +154,15 @@ test.beforeAll(() => {
 	mkdirSync(join(STUDY, COURSE, "materials"), { recursive: true });
 	writeFileSync(join(STUDY, PDF), textPdf(NOTES));
 	writeFileSync(join(STUDY, COURSE, "sessions", `${NAME}.md`), sessionMd());
+	// A session whose only block is a chart: nothing else keeps the wait busy.
+	writeFileSync(
+		join(STUDY, COURSE, "sessions", "2026-11-26-grafico.md"),
+		`---\nid: ${CHART_ID}\ncourse: ${COURSE}\ntitle: Histograma\ncreated: 2026-11-26T15:00:00.000Z\n---\n\n## Tú\n\nUn histograma.\n\n## Claude\n\n${BLOCKS["vega-lite"]}\n`,
+	);
 });
 
 /** Stubs `window.print()`, collects CSP violations, and opens the session in `view`. */
-async function open(page: Page, view: "read" | "practice") {
+async function open(page: Page, view: "read" | "practice", id = ID) {
 	const violations: string[] = [];
 	page.on("console", (m) => {
 		if (/content security policy/i.test(m.text())) violations.push(m.text());
@@ -187,7 +193,7 @@ async function open(page: Page, view: "read" | "practice") {
 	}, view);
 	const photo = await photoPng(page);
 	writeFileSync(join(STUDY, PHOTO), photo);
-	await page.goto(`/s/${ID}`);
+	await page.goto(`/s/${id}`);
 	await expect(
 		page.getByRole("button", { name: "Imprimir", exact: true }),
 	).toBeVisible();
@@ -314,4 +320,16 @@ test("⌘P / Ctrl+P from Read prints the transcript, not the PDF", async ({
 	await expectPrintable(page);
 	await expect(page.locator(".pdf-page").first()).toBeHidden();
 	expect(violations).toEqual([]);
+});
+
+test("a chart is drawn at its print width before print() is called", async ({
+	page,
+}) => {
+	await open(page, "practice", CHART_ID);
+	await expect(
+		page.locator('#root .diagram[data-state="ok"] .diagram-body svg'),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Imprimir", exact: true }).click();
+	await expect.poll(() => printed(page)).toBe(1);
+	expect(await undrawn(page)).toEqual([]);
 });
