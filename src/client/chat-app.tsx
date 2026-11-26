@@ -208,7 +208,8 @@ export function ChatApp() {
 							/>
 						</Suspense>
 					)}
-					{id && <PrintButton printer={printer} />}
+					{/* A phone's header has no room for it; ⌘P / Ctrl+P is for keyboards anyway. */}
+					{id && layout !== "phone" && <PrintButton printer={printer} />}
 					<DevicesMenu onUnpaired={unpair} />
 					<button
 						type="button"

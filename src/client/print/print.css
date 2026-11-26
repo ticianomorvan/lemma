@@ -151,6 +151,7 @@
 }
 /* The line that introduces a diagram stays on its page. */
 .print-root .answer > :has(+ .diagram) {
+	break-inside: avoid;
 	break-after: avoid;
 }
 .print-root .answer :where(p, li) {
