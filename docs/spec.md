@@ -59,7 +59,7 @@ There is no code yet, and this is a new open-source repository (MIT). Things to 
   - math only as `$…$` / `$$…$$`;
   - diagrams only in the fenced block kinds listed below;
   - point to sources as `file.pdf#p=12`.
-- **Study modes are Agent SDK skills** stored in the folder's `.claude/skills/`, so the user can edit them as text. Modes: *read-along*, *explain*, *review my solution* (Socratic: point at the first wrong step, don't hand over the answer), *exam prep* (generate a timed practice set, then grade it).
+- **Study modes are Agent SDK skills** stored in the folder's `.claude/skills/`, so the user can edit them as text. Modes: *read-along*, *explain*, *review my solution* (Socratic: point at the first wrong step, don't hand over the answer), *exam prep* (generate a timed practice set, then grade it). The server sends the chosen skill's text to Claude when the mode changes, rather than leaving it to the Skill tool (architecture.md → Study modes).
 
 **Study folder layout.** This is the only data model.
 ```

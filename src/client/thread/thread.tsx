@@ -12,6 +12,7 @@ import { cn } from "#lib/utils.ts";
 import type { Anchor, Attachment } from "../../shared/protocol.ts";
 import { useLayout } from "../layout.ts";
 import { Markdown } from "../markdown/lazy.tsx";
+import { ModeCards } from "../modes/mode-cards.tsx";
 import { PhonePopover } from "../photos/phone-popover.tsx";
 import { CameraButton, PhotoStrip, SentPhotos } from "../photos/photos.tsx";
 import type { SessionState } from "../store.ts";
@@ -113,6 +114,7 @@ export function Thread({
 		/>
 	);
 	const photos = waiting.length > 0 || state.uploads.length > 0;
+	const meta = state.view?.meta;
 	useStopOnEscape(running, actions.stop);
 	const turns = items.filter((i) => i.kind === "turn");
 	const active = useActiveCell(
@@ -133,6 +135,7 @@ export function Thread({
 				>
 					{items.length === 0 && (
 						<Empty
+							modes={<ModeCards meta={meta} />}
 							camera={
 								phone && !photos
 									? camera("hero", "Sacar foto del ejercicio")
@@ -235,7 +238,7 @@ export function Thread({
 	);
 }
 
-function Empty({ camera }: { camera?: ReactNode }) {
+function Empty({ camera, modes }: { camera?: ReactNode; modes?: ReactNode }) {
 	return (
 		<div className="grid gap-2 pt-[24dvh] text-center">
 			<p className="font-heading text-2xl">¿Qué estudiamos hoy?</p>
@@ -253,6 +256,7 @@ function Empty({ camera }: { camera?: ReactNode }) {
 					ven renderizadas.
 				</p>
 			)}
+			{modes}
 		</div>
 	);
 }

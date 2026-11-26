@@ -17,6 +17,7 @@ import type {
 	Attachment,
 	Block,
 	CreateSessionBody,
+	Mode,
 	Note,
 	NoteBody,
 	NoteResponse,
@@ -42,6 +43,7 @@ import {
 	isCourseName,
 	sessionsDir,
 } from "./folder/layout.ts";
+import { listModes, modeMessage, readSkill } from "./modes/modes.ts";
 import { type PhotoType, photoName, photoType } from "./photos.ts";
 import {
 	appendEntry,
@@ -80,6 +82,11 @@ type LiveSession = {
 	 * longer matches was edited under it, and the next turn starts over.
 	 */
 	agentHash?: string;
+	/**
+	 * The mode the live agent was last told about: null for none, undefined
+	 * when unknown (a resumed agent). A message after a change carries it.
+	 */
+	agentMode?: string | null;
 	/** An interrupt the agent hasn't acknowledged yet. */
 	interrupting?: Promise<void>;
 	/** A turn stopped before its agent existed; interrupted once it does. */
@@ -118,6 +125,11 @@ export class Sessions {
 			.map((e) => e.name);
 	}
 
+	/** The study modes in the folder's `.claude/skills/`. */
+	modes(): Mode[] {
+		return listModes(this.folder);
+	}
+
 	/** Every session in the folder, oldest first, read from the front matter. */
 	list(): SessionSummary[] {
 		const sessions: SessionSummary[] = [];
@@ -152,6 +164,7 @@ export class Sessions {
 	/** Writes a new, empty transcript; its course folder is made if needed. */
 	create({ course, title, mode }: CreateSessionBody): SessionMeta {
 		if (!isCourseName(course)) throw new BadRequest("not a course name");
+		if (mode !== undefined) this.checkMode(mode);
 		const meta: TranscriptMeta = {
 			id: crypto.randomUUID(),
 			course,
@@ -281,6 +294,7 @@ export class Sessions {
 		if (!s) return undefined;
 		const patch: Partial<TranscriptMeta> = {};
 		if (body.title !== undefined) patch.title = body.title.trim();
+		if (body.mode) this.checkMode(body.mode);
 		if (body.mode !== undefined) patch.mode = body.mode ?? undefined;
 		const current = read(this.folder, s.path);
 		write(this.folder, s.path, {
@@ -289,6 +303,12 @@ export class Sessions {
 		});
 		this.emitMeta(id, s, patch);
 		return s.view.meta;
+	}
+
+	private checkMode(mode: string) {
+		if (!readSkill(this.folder, mode)) {
+			throw new BadRequest(`no mode ${mode} in .claude/skills/`);
+		}
 	}
 
 	/** Stops the running turn. False when nothing was running. */
@@ -434,13 +454,20 @@ export class Sessions {
 					if (!current()) return agent.close();
 					s.agent = agent;
 					s.agentHash = asked;
+					s.agentMode = agent.resumed ? undefined : null;
 					void this.run(id, s, agent);
 				}
+				// The mode is read as this message goes, so a change made during
+				// the previous turn applies to this one.
+				const mode = s.view.meta.mode;
+				const steer = modeMessage(this.folder, mode, s.agentMode);
+				if (steer !== null || mode === undefined) s.agentMode = mode ?? null;
 				// An agent seeded with the file has its notes already.
 				agent.push(
 					agentMessage(
 						{ ...user, attachments: photos },
 						fresh && !agent.resumed ? [] : notes,
+						steer,
 					),
 					images,
 				);
@@ -564,6 +591,7 @@ export class Sessions {
 		const agent = s.agent;
 		s.agent = undefined;
 		s.agentHash = undefined;
+		s.agentMode = undefined;
 		agent?.close();
 	}
 
@@ -679,7 +707,8 @@ function clientMeta(meta: Partial<TranscriptMeta> & SessionMeta): SessionMeta {
 }
 
 /**
- * What Claude gets for a question: the notes added since its last message,
+ * What Claude gets for a question: the study mode when it changed, the
+ * notes added since its last message,
  * the passage it quotes (with the file and page, so Claude can `Read` it),
  * then the question.
  */
@@ -687,8 +716,10 @@ export function agentMessage(
 	user: Pick<UserMessage, "text" | "anchor"> &
 		Partial<Pick<UserMessage, "attachments">>,
 	notes: Note[] = [],
+	/** The `<mode>` note (`modeMessage`), when the mode changed. */
+	mode: string | null = null,
 ) {
-	const parts: string[] = [];
+	const parts: string[] = mode ? [mode] : [];
 	const photos = user.attachments ?? [];
 	if (photos.length > 0) {
 		parts.push(

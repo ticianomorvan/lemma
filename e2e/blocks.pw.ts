@@ -280,6 +280,8 @@ test("the app's first load stays small: diagram renderers load on demand", () =>
 		(sum, s) => sum + statSync(join(dist, s)).size,
 		0,
 	);
-	// 941 kB before step 6 split the renderers, KaTeX and Markdown out.
-	expect(bytes).toBeLessThan(560_000);
+	// 941 kB before step 6 split the renderers, KaTeX and Markdown out;
+	// 557 kB after step 10. Step 11's mode cards add 5 kB (its menu, Base
+	// UI's Menu, is a lazy chunk).
+	expect(bytes).toBeLessThan(570_000);
 });

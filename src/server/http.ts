@@ -25,6 +25,7 @@ import { type Auth, CODE_TTL_MS } from "./auth/auth.ts";
 import { chooseStudyFolder } from "./config.ts";
 import { Folder } from "./folder/folder.ts";
 import { isCourseName, materialsDir } from "./folder/layout.ts";
+import { installModes } from "./modes/modes.ts";
 import {
 	MAX_PHOTO_BYTES,
 	type PhotoType,
@@ -92,6 +93,7 @@ export async function startServer({
 	};
 	const open = (dir: string): Study => {
 		const folder = new Folder(dir);
+		installModes(folder);
 		const sessions = new Sessions({
 			driver,
 			folder,
@@ -293,11 +295,13 @@ export async function startServer({
 										folder: study.folder.root,
 										courses: study.sessions.courses(),
 										sessions: study.sessions.list(),
+										modes: study.sessions.modes(),
 									}
 								: {
 										folder: null,
 										courses: [],
 										sessions: [],
+										modes: [],
 									}) satisfies StateResponse,
 						),
 					),

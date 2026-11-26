@@ -106,6 +106,23 @@ export class Folder {
 		this.written.set(this.relative(target), hash(content));
 	}
 
+	/**
+	 * Creates a file (and its parent folders) only if nothing is at `path`
+	 * yet; false when something is. It never replaces a file.
+	 */
+	writeNew(path: string, content: string): boolean {
+		const target = this.jailed(path);
+		mkdirSync(dirname(target), { recursive: true });
+		try {
+			writeFileSync(target, content, { flag: "wx" });
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+			throw error;
+		}
+		this.written.set(this.relative(target), hash(content));
+		return true;
+	}
+
 	modified(path: string): Date {
 		return statSync(this.jailed(path)).mtime;
 	}

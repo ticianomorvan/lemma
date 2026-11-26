@@ -49,6 +49,9 @@ const ReadView = lazy(() =>
 	import("./read/read-view.tsx").then((m) => ({ default: m.ReadView })),
 );
 
+/** The header's mode menu: Base UI's Menu stays out of the first load. */
+const ModeMenu = lazy(() => import("./modes/mode-menu.tsx"));
+
 /** The course a new session goes in when the folder has none yet. */
 const FIRST_COURSE = "general";
 
@@ -189,6 +192,14 @@ export function ChatApp() {
 						/>
 					)}
 					<span className="flex-1" />
+					{id && (
+						<Suspense fallback={null}>
+							<ModeMenu
+								meta={meta && meta.id === id ? meta : undefined}
+								compact={layout === "phone"}
+							/>
+						</Suspense>
+					)}
 					<DevicesMenu onUnpaired={unpair} />
 					<button
 						type="button"
