@@ -32,6 +32,12 @@ Playwright needs Chromium once: `bunx playwright install chromium`.
 
 On first run Lemma asks for your study folder and remembers it in `~/Library/Application Support/lemma/config.json`. Each top-level folder in it is a course, and each session is a Markdown file in `<course>/sessions/`. `LEMMA_STUDY_DIR` overrides the folder for one run.
 
+## Installing the desktop app
+
+With `bun run start` running, open Lemma in Chrome and choose **Install Lemma** (the install icon in the address bar, or ⋮ → Cast, save and share → Install page as app). It opens in its own window with its own Dock icon. When the server is stopped the window says so and reconnects by itself once you start it again; after a new build it offers "Actualizar".
+
+The app is tied to its address, `http://127.0.0.1:4317`: keep the port fixed. If you change it, install again from the new address. A phone over the local network gets the same page but no install, since plain HTTP on a LAN address isn't a secure context.
+
 ## Signing in to Claude
 
 Lemma never asks for, reads or stores your Claude credentials. It runs the official, unmodified Claude Code program, and you sign in to that yourself in one of two ways:

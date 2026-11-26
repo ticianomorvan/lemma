@@ -22,6 +22,7 @@ import {
 } from "../shared/protocol.ts";
 import { apply } from "../shared/reducer.ts";
 import { downscale } from "./photos/downscale.ts";
+import { checkForUpdate } from "./pwa/check.ts";
 import { randomId } from "./random-id.ts";
 import { isUnpaired } from "./unpaired.ts";
 
@@ -243,6 +244,8 @@ export class SessionStore {
 		let opened = false;
 		socket.onopen = () => {
 			opened = true;
+			// Back after a drop: the server may have restarted on a new build.
+			if (this.retry > 0) checkForUpdate();
 			this.retry = 0;
 			this.resubscribe();
 		};

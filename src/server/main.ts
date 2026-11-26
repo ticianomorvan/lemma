@@ -27,8 +27,10 @@ const auth = new Auth({
 
 const server = await startServer({
 	port,
+	// `LEMMA_DIST_DIR`: another build to serve (e2e/pwa.pw.ts changes a copy).
 	distDir: production
-		? fileURLToPath(new URL("../../dist", import.meta.url))
+		? (process.env.LEMMA_DIST_DIR ??
+			fileURLToPath(new URL("../../dist", import.meta.url)))
 		: null,
 	driver: driver(),
 	studyDir: override ?? config.folder ?? null,

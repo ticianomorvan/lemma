@@ -18,7 +18,12 @@ export default defineConfig({
 	testMatch: "**/*.pw.ts",
 	forbidOnly: !!process.env.CI,
 	reporter: process.env.CI ? "github" : "list",
-	use: { baseURL: `http://127.0.0.1:${port}` },
+	use: {
+		baseURL: `http://127.0.0.1:${port}`,
+		// The app's service worker precaches the whole build (about 11 MB) in
+		// every new context; only e2e/pwa.pw.ts, which tests it, turns it on.
+		serviceWorkers: "block",
+	},
 	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 	webServer: [
 		{

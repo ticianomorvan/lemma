@@ -144,6 +144,7 @@ Versions checked on 2026-11-22. Pin these, and re-check with `npm view` when a s
 ### 13. Installable app
 - **What:** a PWA manifest and an app-shell service worker, so it can be installed as a Chrome app with its own Dock icon.
 - **Proof:** it installs and opens in its own window, and works after the server restarts.
+- **Built:** `vite-plugin-pwa` with Workbox's `generateSW`; the worker precaches the shell only and never answers `/api`, `/files`, `/pair` or `/ws`. "Lemma no está corriendo" when the server is down, recovering on its own; updates wait for "Actualizar" or the next open; no worker on the phone (not a secure context). See architecture.md → Installable app. `e2e/pwa.pw.ts` runs its own server on a copy of the build to stop, restart and "rebuild" it.
 
 ## Not yet planned
 - Typst: `typst` blocks, previews of `.typ` notes, export to `.typ`. Built as PR #27 and closed unmerged: its one real use, a session as PDF, is the browser's print (step 12).

@@ -7,7 +7,8 @@
  * POST, so whatever fetches a link without running it (a chat app's preview,
  * a prefetch) can't spend it, and a prerendered page waits until it shows.
  */
-import { KeyRound, Link2Off, WifiOff } from "lucide-react";
+import { KeyRound, Link2Off, PowerOff, WifiOff } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button, buttonVariants } from "#components/ui/button.tsx";
 import { APP_NAME } from "../shared/app.ts";
 import type { RedeemResponse } from "../shared/protocol.ts";
@@ -46,21 +47,50 @@ async function redeem() {
 	return ((await res.json()) as RedeemResponse).next;
 }
 
-const COPY = {
+/**
+ * Each screen's copy. `steps`: how to get a pairing link. `retry`: the
+ * button's label; without one, the screen links back to `/`.
+ */
+const COPY: Record<
+	"unpaired" | "expired" | "offline" | "stopped",
+	{
+		Icon: typeof KeyRound;
+		title: string;
+		text: ReactNode;
+		steps?: true;
+		retry?: string;
+	}
+> = {
 	unpaired: {
 		Icon: KeyRound,
+		steps: true,
+		retry: "Ya lo abrí, reintentar",
 		title: "Vinculá este navegador",
 		text: `${APP_NAME} solo responde a navegadores vinculados, para que ningún otro programa de tu computadora pueda usar tu carpeta de estudio.`,
 	},
 	expired: {
 		Icon: Link2Off,
 		title: "Este enlace ya no sirve",
+		steps: true,
 		text: "Cada enlace para vincular sirve una sola vez y vence a los 5 minutos.",
 	},
 	offline: {
 		Icon: WifiOff,
 		title: "No se pudo vincular",
+		retry: "Reintentar",
 		text: `${APP_NAME} no respondió. Revisá que este dispositivo esté en la misma red Wi-Fi que la computadora y que ${APP_NAME} siga abierto. El enlace todavía sirve.`,
+	},
+	stopped: {
+		Icon: PowerOff,
+		title: `${APP_NAME} no está corriendo`,
+		retry: "Reintentar",
+		text: (
+			<>
+				Iniciá {APP_NAME} en la computadora con{" "}
+				<code className="font-mono text-[13px]">bun run start</code>. Esta
+				ventana se reconecta sola en cuanto responda.
+			</>
+		),
 	},
 };
 
@@ -70,13 +100,14 @@ export function PairingScreen({
 }: {
 	/**
 	 * `expired`: a pairing link that was used or timed out. `offline`: one
-	 * whose redemption never reached the server.
+	 * whose redemption never reached the server. `stopped`: the app loaded
+	 * (from the service worker's cache) but the server isn't answering.
 	 */
 	kind: keyof typeof COPY;
-	/** For `unpaired` and `offline`: try again. */
+	/** For `unpaired`, `offline` and `stopped`: try again. */
 	onRetry?: () => void;
 }) {
-	const { Icon, title, text } = COPY[kind];
+	const { Icon, title, text, steps, retry } = COPY[kind];
 	return (
 		<main className="grid min-h-dvh place-items-center bg-paper px-4 py-10">
 			<section
@@ -97,7 +128,7 @@ export function PairingScreen({
 						{text}
 					</p>
 				</div>
-				{kind !== "offline" && (
+				{steps && (
 					<ol className="grid list-decimal gap-2 pl-5 text-sm leading-relaxed text-pretty marker:text-muted-foreground">
 						<li>
 							Abrí el enlace que {APP_NAME} muestra en la terminal al iniciar
@@ -113,14 +144,14 @@ export function PairingScreen({
 						</li>
 					</ol>
 				)}
-				{kind !== "expired" ? (
+				{retry ? (
 					<Button
 						size="lg"
 						variant="outline"
 						onClick={onRetry}
 						className="h-10 transition-transform duration-150 ease-out active:scale-[0.97]"
 					>
-						{kind === "offline" ? "Reintentar" : "Ya lo abrí, reintentar"}
+						{retry}
 					</Button>
 				) : (
 					<a
