@@ -51,10 +51,16 @@ export function usePrint(view: SessionView | undefined) {
 
 	const print = useCallback(() => {
 		busy.current ??= (async () => {
+			// Nothing to print until the session's snapshot has arrived.
+			if (!titleRef.current) return;
 			mount();
 			const el = root.current;
-			if (!el) return;
-			await drawn(el);
+			if (!el) return unmount();
+			try {
+				await drawn(el);
+			} catch {
+				// Print what has drawn.
+			}
 			// A print from the browser's menu meanwhile already came and went.
 			if (saved.current === undefined) return;
 			fit(el);
@@ -63,11 +69,15 @@ export function usePrint(view: SessionView | undefined) {
 			busy.current = undefined;
 		});
 		return busy.current;
-	}, [mount]);
+	}, [mount, unmount]);
 
 	useEffect(() => {
+		// ⌘P on a Mac (Ctrl+P there moves up a line in a text field), Ctrl+P
+		// elsewhere; the letter, whatever the keyboard layout.
+		const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 		const onKey = (e: KeyboardEvent) => {
-			if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === "KeyP") {
+			const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+			if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p") {
 				e.preventDefault();
 				void print();
 			}
@@ -94,6 +104,8 @@ export function usePrint(view: SessionView | undefined) {
 async function drawn(el: HTMLElement) {
 	const end = performance.now() + READY_TIMEOUT_MS;
 	const frame = () => new Promise((r) => setTimeout(r, 50));
+	// Deferred renders (a Vega chart's measured width) run as tasks: let them start.
+	await frame();
 	while (el.querySelector(PENDING) && performance.now() < end) await frame();
 	await Promise.all(
 		[...el.querySelectorAll("img")].map((img) => img.decode().catch(() => {})),

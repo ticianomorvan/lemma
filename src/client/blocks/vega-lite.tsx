@@ -196,12 +196,30 @@ export default function VegaLite({ source }: { source: string }) {
 		ro.observe(el);
 		return () => ro.disconnect();
 	}, []);
+	// Until a width is measured and drawn, a print waits (`data-pending`),
+	// or, if it can't wait, prints the source.
+	const printSource = (
+		<pre className="diagram-source diagram-print-source">{source}</pre>
+	);
 	return (
-		<div ref={ref} className="diagram-scroll">
-			{width > 0 && (
-				<Suspense fallback={<div className="diagram-loading" data-pending />}>
+		<div
+			ref={ref}
+			className="diagram-scroll"
+			data-pending={width === 0 || width !== measured || undefined}
+		>
+			{width > 0 ? (
+				<Suspense
+					fallback={
+						<>
+							<div className="diagram-loading" data-pending />
+							{printSource}
+						</>
+					}
+				>
 					<Chart source={source} width={width} scheme={scheme} />
 				</Suspense>
+			) : (
+				printSource
 			)}
 		</div>
 	);

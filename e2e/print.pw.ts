@@ -163,10 +163,23 @@ async function open(page: Page, view: "read" | "practice") {
 	});
 	await page.addInitScript((v) => {
 		localStorage.setItem("lemma:view", v);
-		const w = window as unknown as { printed: number };
+		const w = window as unknown as { printed: number; undrawn: string[] };
 		w.printed = 0;
+		// What the dialog would capture: anything still loading, or a block
+		// with nothing drawn, at the moment print() is called.
 		window.print = () => {
 			w.printed += 1;
+			const root = document.querySelector(".print-root");
+			w.undrawn = root
+				? [
+						...[...root.querySelectorAll("[data-pending]")].map(
+							(n) => `pending ${n.className}`,
+						),
+						...[...root.querySelectorAll(".diagram")]
+							.filter((d) => !d.querySelector(".diagram-body :is(svg, .katex)"))
+							.map((d) => `empty ${d.getAttribute("data-block")}`),
+					]
+				: ["no copy"];
 		};
 		document.addEventListener("securitypolicyviolation", (e) =>
 			console.error(`content security policy: ${e.violatedDirective}`),
@@ -183,6 +196,10 @@ async function open(page: Page, view: "read" | "practice") {
 
 const printed = (page: Page) =>
 	page.evaluate(() => (window as unknown as { printed: number }).printed);
+
+/** What wasn't drawn yet when print() was called. */
+const undrawn = (page: Page) =>
+	page.evaluate(() => (window as unknown as { undrawn: string[] }).undrawn);
 
 /** What print media shows: only the copy, every turn and block drawn, nothing past the page. */
 async function expectPrintable(page: Page) {
@@ -261,6 +278,7 @@ test("Imprimir prints the Practice thread as a light document, every block drawn
 	// Off-screen turns: the notebook opens at the bottom, far from the first blocks.
 	await page.getByRole("button", { name: "Imprimir", exact: true }).click();
 	await expect.poll(() => printed(page)).toBe(1);
+	expect(await undrawn(page)).toEqual([]);
 	await expectPrintable(page);
 
 	// Mermaid bakes its colours in: the screen's copy is dark, the print's light.
@@ -292,6 +310,7 @@ test("⌘P / Ctrl+P from Read prints the transcript, not the PDF", async ({
 	});
 	await page.keyboard.press("ControlOrMeta+p");
 	await expect.poll(() => printed(page)).toBe(1);
+	expect(await undrawn(page)).toEqual([]);
 	await expectPrintable(page);
 	await expect(page.locator(".pdf-page").first()).toBeHidden();
 	expect(violations).toEqual([]);
