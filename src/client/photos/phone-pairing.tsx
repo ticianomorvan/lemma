@@ -75,7 +75,8 @@ export default function PhonePairing({
 	}, [expiresAt, ask]);
 
 	return (
-		<div className="grid gap-3">
+		// minmax(0, 1fr): a long list of phones truncates instead of widening the panel.
+		<div className="grid grid-cols-[minmax(0,1fr)] gap-3">
 			<div className="grid gap-1">
 				<h3 className="font-heading text-[17px] leading-tight font-semibold">
 					Mandá fotos desde el teléfono
