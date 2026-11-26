@@ -19,6 +19,10 @@ export const attachmentsDir = (transcript: string) =>
 /** Where photos sent with no session open go. */
 export const INBOX = "inbox";
 
+/** The study modes: one Agent SDK skill each, `<SKILLS>/<mode>/SKILL.md`. */
+export const SKILLS = ".claude/skills";
+export const skillFile = (mode: string) => `${SKILLS}/${mode}/SKILL.md`;
+
 /** Where a course's PDFs and other material live. */
 export const materialsDir = (course: string) => `${course}/materials`;
 

@@ -276,7 +276,7 @@ test("courses are the folder's top-level folders", async () => {
 	const { api, dir } = await serve({ streams: [] }, { create: false });
 	await mkdir(join(dir, "logica"));
 	await mkdir(join(dir, "inbox"));
-	await mkdir(join(dir, ".claude"));
+	await mkdir(join(dir, ".claude"), { recursive: true });
 	await writeFile(join(dir, "suelto.md"), "x");
 	await mkdir(join(dir, "logica", "sessions"));
 	await writeFile(
@@ -313,6 +313,7 @@ test("first run: no folder until one is chosen, then it is saved", async () => {
 			folder: null,
 			courses: [],
 			sessions: [],
+			modes: [],
 		});
 		expect((await api("/api/sessions", { course: "x" })).status).toBe(409);
 		for (const path of ["relativa/x", "~", "/"]) {
@@ -328,6 +329,8 @@ test("first run: no folder until one is chosen, then it is saved", async () => {
 		);
 		const state = (await (await api("/api/state")).json()) as StateResponse;
 		expect(state.courses).toEqual(["general"]);
+		// The chosen folder gets the default study modes.
+		expect(state.modes).toHaveLength(4);
 	}
 });
 

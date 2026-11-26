@@ -88,9 +88,14 @@ export function sdkOptions(
 	return {
 		...session,
 		cwd: folder.root,
-		// Project settings only: loads the folder's `.claude/skills` and keeps
-		// the user's global hooks and MCP servers out.
+		// Project settings only: keeps the user's global hooks, skills and MCP
+		// servers out.
 		settingSources: ["project"],
+		// The study modes in `.claude/skills/` reach Claude as text the
+		// sessions module sends when the mode changes (`modes/modes.ts`), not
+		// through the Skill tool: a mode is the student's choice, not Claude's.
+		// So no skill is listed.
+		skills: [],
 		systemPrompt: {
 			type: "preset",
 			preset: "claude_code",

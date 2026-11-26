@@ -33,6 +33,24 @@ export const Attachment = z.object({
 });
 export type Attachment = z.infer<typeof Attachment>;
 
+/**
+ * A study mode's id: the name of its folder in `.claude/skills/`, which is
+ * the skill's name, so lowercase kebab-case.
+ */
+export const MODE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const ModeId = z.string().regex(MODE_ID);
+
+/**
+ * A study mode the folder offers: its skill's folder name, and the `label`
+ * and `description` from its SKILL.md front matter.
+ */
+export const Mode = z.object({
+	id: z.string(),
+	label: z.string(),
+	description: z.string().optional(),
+});
+export type Mode = z.infer<typeof Mode>;
+
 /** A session's front matter, as clients see it. */
 export const SessionMeta = z.object({
 	id: z.string(),
@@ -264,7 +282,7 @@ export type ServerMessage = z.infer<typeof ServerMessage>;
 export const CreateSessionBody = z.object({
 	course: z.string().min(1).max(200),
 	title: z.string().max(200).optional(),
-	mode: z.string().min(1).max(64).optional(),
+	mode: ModeId.optional(),
 });
 export type CreateSessionBody = z.infer<typeof CreateSessionBody>;
 
@@ -275,7 +293,7 @@ export const PatchSessionBody = z
 	.object({
 		title: z.string().max(200).optional(),
 		/** Null clears the mode. */
-		mode: z.string().min(1).max(64).nullable().optional(),
+		mode: ModeId.nullable().optional(),
 	})
 	.refine((b) => b.title !== undefined || b.mode !== undefined, {
 		message: "send a title or a mode",
@@ -338,6 +356,8 @@ export const StateResponse = z.object({
 	courses: z.array(z.string()),
 	/** Every session in the folder, oldest first. */
 	sessions: z.array(SessionSummary),
+	/** The study modes in the folder's `.claude/skills/`. */
+	modes: z.array(Mode),
 });
 export type StateResponse = z.infer<typeof StateResponse>;
 
