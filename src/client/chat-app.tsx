@@ -42,7 +42,6 @@ import { Title, titleText } from "./markdown/lazy.tsx";
 import { isPairingPath, PairingScreen, redeemLink } from "./pairing.tsx";
 import { PracticeView } from "./practice/practice-view.tsx";
 import { usePrint } from "./print/use-print.tsx";
-import { reconnected } from "./pwa/events.ts";
 import type { PagePlace } from "./read/anchors.ts";
 import type { Material, ReadMemory } from "./read/read-view.tsx";
 import { SessionsMenu } from "./sessions-menu.tsx";
@@ -68,6 +67,15 @@ const sessionFromPath = () =>
 
 /** The server answered 403 `unpaired`: this browser has no valid device cookie. */
 class Unpaired extends Error {}
+
+/** Nothing answered at all: the server isn't running (or, on a phone, isn't reachable). */
+class ServerDown extends Error {}
+
+/** `fetch`, with a failure to reach the server as `ServerDown`. */
+const call = (input: string, init?: RequestInit) =>
+	fetch(input, init).catch(() => {
+		throw new ServerDown();
+	});
 
 export function ChatApp() {
 	const [id, setId] = useState(sessionFromPath);
@@ -146,9 +154,8 @@ export function ChatApp() {
 				setScreen(
 					error instanceof Unpaired
 						? "unpaired"
-						: error instanceof TypeError
-							? // fetch rejects only when nothing answered: the server is down.
-								"stopped"
+						: error instanceof ServerDown
+							? "stopped"
 							: "failed",
 				);
 			}
@@ -158,19 +165,24 @@ export function ChatApp() {
 		};
 	}, [id, attempt]);
 
-	// While the server is down, ask every 2 s; the first answer of any kind
-	// (even a 403) starts the app over.
+	// While the server is down, ask every 2 s. The first answer of any kind
+	// (even a 403) reloads the page, which also looks for a new build.
 	useEffect(() => {
 		if (screen !== "stopped") return;
-		const timer = setInterval(async () => {
+		let cancelled = false;
+		let timer: ReturnType<typeof setTimeout>;
+		const ask = async () => {
 			const res = await fetch("/api/state").catch(() => null);
-			if (!res) return;
-			clearInterval(timer);
-			reconnected();
-			retry();
-		}, 2000);
-		return () => clearInterval(timer);
-	}, [screen, retry]);
+			if (cancelled) return;
+			if (res) location.reload();
+			else timer = setTimeout(ask, 2000);
+		};
+		timer = setTimeout(ask, 2000);
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+		};
+	}, [screen]);
 
 	useEffect(() => {
 		const onPop = () => setId(sessionFromPath());
@@ -555,14 +567,14 @@ function storedView(): View | null {
 }
 
 async function loadState(): Promise<StateResponse> {
-	const res = await fetch("/api/state");
+	const res = await call("/api/state");
 	if (await isUnpaired(res)) throw new Unpaired();
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	return (await res.json()) as StateResponse;
 }
 
 async function createSession(course: string): Promise<string> {
-	const res = await fetch("/api/sessions", {
+	const res = await call("/api/sessions", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ course }),

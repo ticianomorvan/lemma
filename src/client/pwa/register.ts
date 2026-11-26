@@ -3,31 +3,36 @@
  * that main.tsx loads after the page has loaded, and only in a secure context.
  *
  * Updates: a new build's worker installs beside the running one and waits.
- * The page then shows "Actualizar" (update-pill.tsx); pressing it activates the
- * new worker and reloads. A page that never presses it keeps the old build,
- * whose bundles stay precached, until every window of the app closes: the next
- * open gets the new one. The browser looks for a new worker on every
- * navigation; this also looks when the server answers again after being down
- * (it restarts after a build) and when the window comes back into view.
+ * Every open window then shows "Actualizar" (update-pill.tsx). Pressing it in
+ * one window activates the new worker and reloads that window. The others now
+ * run on the new worker, whose cache no longer holds their old bundles, so
+ * their pill just reloads. If nobody presses it, the old build keeps working
+ * from its precache until every window of the app closes, and the next open
+ * gets the new one.
  */
 import { registerSW } from "virtual:pwa-register";
-import { RECONNECTED } from "./events.ts";
+import { checkForUpdate } from "./check.ts";
 
+const show = (apply: () => void) =>
+	void import("./update-pill.tsx").then(({ showUpdate }) => showUpdate(apply));
+
+let pressed = false;
 const update = registerSW({
 	onNeedRefresh() {
-		void import("./update-pill.tsx").then(({ showUpdate }) =>
-			showUpdate(() => update(true)),
-		);
-	},
-	onRegisteredSW(_url, registration) {
-		if (!registration) return;
-		const check = () => {
-			// Rejects while the server is down; the next check tries again.
-			registration.update().catch(() => {});
-		};
-		window.addEventListener(RECONNECTED, check);
-		document.addEventListener("visibilitychange", () => {
-			if (document.visibilityState === "visible") check();
+		show(() => {
+			pressed = true;
+			void update(true);
 		});
 	},
+	// The new worker took over, from this window or another. The plugin would
+	// reload every window here; only the one that pressed does, and the others
+	// ask, so no draft is lost.
+	onNeedReload() {
+		if (pressed) location.reload();
+		else show(() => location.reload());
+	},
+});
+
+document.addEventListener("visibilitychange", () => {
+	if (document.visibilityState === "visible") checkForUpdate();
 });

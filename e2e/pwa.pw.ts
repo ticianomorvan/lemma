@@ -282,12 +282,17 @@ test("with the server stopped the shell still loads and says Lemma isn't running
 	await context.close();
 });
 
-test("a rebuilt bundle reaches the open app: it offers the update and reloads into it", async ({
+test("a rebuilt bundle reaches every open window: each offers the update and reloads into it", async ({
 	browser,
 }) => {
 	const context = await paired(browser);
 	const { page, problems } = await openControlled(context);
-	expect(await page.locator('meta[name="lemma-build"]').count()).toBe(0);
+	// A second window of the app (say, a tab beside the app window).
+	const other = await context.newPage();
+	await other.goto(`${BASE}/`);
+	await expect(composer(other)).toBeVisible();
+	const build = (p: Page) => p.locator('meta[name="lemma-build"]');
+	expect(await build(page).count()).toBe(0);
 
 	// "Rebuild": a changed index.html, and the worker's precache list with its
 	// new revision, as `bun run build` would make; then restart the server.
@@ -317,10 +322,15 @@ test("a rebuilt bundle reaches the open app: it offers the update and reloads in
 		page.getByRole("status").filter({ hasText: "versión nueva" }),
 	).toBeVisible();
 	await update.click();
-	await expect(page.locator('meta[name="lemma-build"]')).toHaveCount(1, {
-		timeout: 15_000,
-	});
+	await expect(build(page)).toHaveCount(1, { timeout: 15_000 });
 	await expect(composer(page)).toBeVisible();
+
+	// The other window now runs on the new worker; its pill still takes it to
+	// the new build rather than leaving it on bundles no longer cached.
+	await expect(build(other)).toHaveCount(0);
+	await other.getByRole("button", { name: "Actualizar" }).click();
+	await expect(build(other)).toHaveCount(1, { timeout: 15_000 });
+	await expect(composer(other)).toBeVisible();
 	expect(
 		problems.filter(
 			(p) => !/ERR_CONNECTION_REFUSED|WebSocket connection/.test(p),

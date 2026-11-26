@@ -64,7 +64,8 @@ export default defineConfig({
 				// the worker and goes to the network untouched; with no runtime
 				// caching, nothing but the shell is ever stored.
 				navigateFallback: "/index.html",
-				navigateFallbackAllowlist: [/^\/$/, /^\/s\/[\w-]+$/],
+				// Workbox matches the path and the query.
+				navigateFallbackAllowlist: [/^\/(\?.*)?$/, /^\/s\/[\w-]+(\?.*)?$/],
 				cleanupOutdatedCaches: true,
 			},
 		}),

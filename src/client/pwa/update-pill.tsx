@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { APP_NAME } from "../../shared/app.ts";
 
 /**
@@ -8,15 +8,19 @@ import { APP_NAME } from "../../shared/app.ts";
  * drop a message being typed. It mounts in its own root from the worker's lazy
  * chunk, so the first load carries none of it.
  */
-export function showUpdate(apply: () => Promise<void>) {
-	if (document.getElementById("lemma-update")) return;
-	const host = document.createElement("div");
-	host.id = "lemma-update";
-	document.body.append(host);
-	createRoot(host).render(<UpdatePill apply={apply} />);
+let root: Root | undefined;
+
+/** Shows the pill, or gives the one showing a new action. */
+export function showUpdate(apply: () => void) {
+	if (!root) {
+		const host = document.createElement("div");
+		document.body.append(host);
+		root = createRoot(host);
+	}
+	root.render(<UpdatePill key={Math.random()} apply={apply} />);
 }
 
-function UpdatePill({ apply }: { apply: () => Promise<void> }) {
+function UpdatePill({ apply }: { apply: () => void }) {
 	const [busy, setBusy] = useState(false);
 	return (
 		<div
@@ -29,7 +33,7 @@ function UpdatePill({ apply }: { apply: () => Promise<void> }) {
 				disabled={busy}
 				onClick={() => {
 					setBusy(true);
-					void apply();
+					apply();
 				}}
 				className="h-6 rounded-full bg-primary px-2.5 font-medium text-primary-foreground transition-transform duration-150 ease-out active:scale-[0.97] disabled:opacity-60"
 			>
