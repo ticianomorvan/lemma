@@ -7,6 +7,7 @@ import { Auth } from "./auth/auth.ts";
 import { configDir, readConfig, saveConfig } from "./config.ts";
 import { startServer } from "./http.ts";
 import { lanAddress } from "./lan.ts";
+import { Typst } from "./typst/typst.ts";
 
 const production = process.env.NODE_ENV === "production";
 /**
@@ -25,6 +26,11 @@ const auth = new Auth({
 	...(dev ? { devOrigin: DEV_ORIGIN } : {}),
 });
 
+// Typst's compiler takes about half a second to load: start it now, so the
+// first block, preview or export doesn't wait for it.
+const typst = new Typst();
+if (production) typst.warm();
+
 const server = await startServer({
 	port,
 	distDir: production
@@ -39,6 +45,7 @@ const server = await startServer({
 	onNoDevices: () => pairDesktop({ open: false }),
 	// `LEMMA_LAN_ADDRESS` picks the address (tests use `::1`).
 	lanAddress: () => process.env.LEMMA_LAN_ADDRESS || lanAddress(),
+	typst,
 });
 console.log(
 	production

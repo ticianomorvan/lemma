@@ -8,8 +8,8 @@
  *   nothing a student or Claude wrote runs as Typst code.
  * - Math stays LaTeX: `@preview/mitex` (shipped in `assets/packages`)
  *   renders it, so `align`, `cases` and `pmatrix` survive as written.
- * - Diagram blocks: a `typst` block goes in as Typst, in its own `#[ … ]`
- *   scope, once it compiles alone; a `dot` block goes in as the SVG Graphviz
+ * - Diagram blocks: a `typst` block goes in as Typst, evaluated from a
+ *   string in its own scope, once it compiles alone; a `dot` block goes in as the SVG Graphviz
  *   draws for it. The other kinds (and a block that fails) keep their source,
  *   in a code block with a line saying so.
  * - Photos are images, by their path relative to the export.
@@ -216,15 +216,21 @@ async function blockquote(node: Blockquote, draw: DrawBlock): Promise<string> {
 
 function table(node: Table): string {
 	const columns = node.children[0]?.children.length ?? 1;
+	// GFM rows may be short or long: each takes exactly `columns` cells.
 	const cells = node.children.flatMap((row, i) =>
-		row.children.map((cell) => {
-			const body = inline(cell.children);
+		Array.from({ length: columns }, (_, c) => {
+			const cell = row.children[c];
+			const body = cell ? inline(cell.children) : "";
 			return i === 0 ? `[*${body}*]` : `[${body}]`;
 		}),
 	);
 	return `#table(columns: ${columns}, inset: 6pt, stroke: 0.5pt + luma(170),\n  ${cells.join(", ")},\n)`;
 }
 
+/**
+ * Inline content. Every `#expr` it emits ends in `;`, so text that follows
+ * (`**Nota**(opcional)`, `$f$(x)`) can't read as a call or field access.
+ */
 function inline(nodes: Nodes[]): string {
 	return nodes.map(inlineNode).join("");
 }
@@ -234,20 +240,20 @@ function inlineNode(node: Nodes): string {
 		case "text":
 			return text((node as TextNode).value.replace(/\s*\n\s*/g, " "));
 		case "emphasis":
-			return `#emph[${inline(node.children)}]`;
+			return `#emph[${inline(node.children)}];`;
 		case "strong":
-			return `#strong[${inline(node.children)}]`;
+			return `#strong[${inline(node.children)}];`;
 		case "delete":
-			return `#strike[${inline(node.children)}]`;
+			return `#strike[${inline(node.children)}];`;
 		case "inlineCode":
-			return `#raw(${str(node.value)})`;
+			return `#raw(${str(node.value)});`;
 		case "inlineMath":
-			return `#mi(${str(latex(node.value))})`;
+			return `#mi(${str(latex(node.value))});`;
 		case "break":
 			return " \\\n";
 		case "link":
 			return /^https?:\/\//i.test(node.url)
-				? `#link(${str(node.url)})[${inline(node.children)}]`
+				? `#link(${str(node.url)})[${inline(node.children)}];`
 				: inline(node.children);
 		case "image":
 			// Images in answers point anywhere; keep their description.
@@ -332,7 +338,7 @@ export async function exportSession(
 
 /**
  * A `typst` block goes in as itself when it compiles alone inside the scope
- * it will have (`#[ … ]`, so its set rules stay inside); a `dot` block as the
+ * it will have (evaluated from a string, so its rules stay inside); a `dot` block as the
  * SVG Graphviz draws. Anything else keeps its source.
  */
 export async function drawBlock(
@@ -341,15 +347,17 @@ export async function drawBlock(
 	src: string,
 ): Promise<string | null> {
 	if (kind === "typst") {
-		const scoped = `#[\n${src}\n]`;
+		// Evaluated from a string, so no `]` in the source can close its scope
+		// and leak set or show rules into the rest of the export.
+		const scoped = `#eval(${str(src)}, mode: "markup")`;
 		return (await typst.svg(scoped)).ok ? scoped : null;
 	}
 	if (kind === "dot") {
 		const svg = await dotSvg(src);
-		return (
-			svg &&
-			`#align(center, image(bytes(${str(svg)}), format: "svg", width: auto))`
-		);
+		if (!svg) return null;
+		const image = `#align(center, image(bytes(${str(svg)}), format: "svg", width: auto))`;
+		// Typst must be able to load the SVG, or the whole PDF would fail.
+		return (await typst.svg(image)).ok ? image : null;
 	}
 	return null;
 }

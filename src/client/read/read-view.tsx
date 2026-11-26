@@ -287,11 +287,18 @@ function useRecompiles(store: SessionStore, file: string) {
 	const [version, setVersion] = useState(0);
 	useEffect(() => {
 		if (!isTypstFile(file)) return;
-		return store.onFolderChange((path) => {
+		// A burst of edits (Claude writing a note) compiles once, after it.
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const stop = store.onFolderChange((path) => {
 			// An export writing its own `.typ` is not a change to a note.
-			if (isTypstFile(path) && !path.includes("/exports/"))
-				setVersion((v) => v + 1);
+			if (!isTypstFile(path) || path.includes("/exports/")) return;
+			clearTimeout(timer);
+			timer = setTimeout(() => setVersion((v) => v + 1), 300);
 		});
+		return () => {
+			clearTimeout(timer);
+			stop();
+		};
 	}, [store, file]);
 	return version;
 }

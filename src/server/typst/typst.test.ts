@@ -256,6 +256,17 @@ const ENTRIES: Entry[] = [
 					"| $p$ | $\\neg p$ |",
 					"|---|---|",
 					"| V | F |",
+					"| W |",
+					"",
+					"**Nota**(opcional) y $f$(x).",
+					"",
+					"```typst",
+					"] #set text(fill: red) #[",
+					"```",
+					"",
+					"```typst",
+					"#show: _ => []",
+					"```",
 					"",
 					"- uno",
 					"- dos",
@@ -342,7 +353,7 @@ test("a session becomes a Typst document", async () => {
 	// The question: its passage, its text with math and a line break, its photo.
 	expect(doc).toContain("#fuente[apunte.pdf, p. 3]");
 	expect(doc).toContain(
-		'¿Cuánto vale #mi("P(X>1\\\\mathord{,}5)") si #mi("X\\\\sim N(0,1)")? \\\nY el AFD de paridad.',
+		'¿Cuánto vale #mi("P(X>1\\\\mathord{,}5)"); si #mi("X\\\\sim N(0,1)");? \\\nY el AFD de paridad.',
 	);
 	expect(doc).toContain(
 		'#image("../sessions/2026-11-26-normal/001-photo.png", width: 60%)',
@@ -355,7 +366,7 @@ test("a session becomes a Typst document", async () => {
 		'#align(center, mitex("\\\\begin{aligned}\\nP(X>1\\\\mathord{,}5)',
 	);
 	expect(doc).toContain(
-		'Con #emph[énfasis], #strong[negrita], #raw("código"), \\#include "x" y \\@ref 1 \\< 2 \\> 0 \\/\\/ no comentario, y 10 dólares.',
+		'Con #emph[énfasis];, #strong[negrita];, #raw("código");, \\#include "x" y \\@ref 1 \\< 2 \\> 0 \\/\\/ no comentario, y 10 dólares.',
 	);
 	// Blocks: drawn when they can be, their source otherwise.
 	expect(doc).toContain("#DOT");
@@ -406,7 +417,14 @@ test("Exportar writes the .typ and its PDF, which the typst CLI compiles too", a
 	const typ = await readFile(join(dir, out.typ), "utf8");
 	// Graphviz drew the automaton; the typst block went in as Typst.
 	expect(typ).toContain('image(bytes("<?xml');
-	expect(typ).toContain("#[\n$ mat(1, 2; 3, 4) $");
+	expect(typ).toContain(
+		'#eval("$ mat(1, 2; 3, 4) $\\n#set text(fill: blue)", mode: "markup")',
+	);
+	// A block that tries to close its scope doesn't compile alone: source.
+	expect(typ).toContain("```typ\n] #set text(fill: red) #[\n```");
+	// One that compiles stays inside its own string, show rules and all.
+	expect(typ).toContain('#eval("#show: _ => []", mode: "markup")');
+	expect(typ).toContain("¿Y el complemento?");
 	expect(typ).toContain(
 		`#image("../sessions/${stem}/001-photo.png", width: 60%)`,
 	);
